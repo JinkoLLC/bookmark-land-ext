@@ -36,5 +36,6 @@ If your change needs checking signed in, say so in the PR and a maintainer will 
 - **Words.** Use the terms in [GLOSSARY.md](GLOSSARY.md) in code, UI text and docs.
 - **Capture-first.** Extensions never write to the browser's native bookmarks. See [docs/adr](docs/adr).
 - **Permissions are public promises.** A new permission, host or kind of data sent anywhere needs its privacy disclosure updated too. Call it out in the PR.
+- **No analytics SDK.** Do not add one to an extension.
 - **No remote code.** No code loaded and run from a server, and no `eval`. Store policy requires both.
 - **New browsers** get their own directory at the root, with their own package and CI matrix entry.
