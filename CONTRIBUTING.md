@@ -31,8 +31,10 @@ If your change needs checking signed in, say so in the PR and a maintainer will 
 
 ## Rules
 
-Read [AGENTS.md](AGENTS.md): it lists the project's rules for people and coding agents alike. In short:
-
-- Nothing private: no deployment names, internal URLs, test accounts or secrets.
-- Use the words in [GLOSSARY.md](GLOSSARY.md).
-- A new permission or host, or a new kind of data sent anywhere, needs its privacy disclosure updated too. Call it out in the PR.
+- **Nothing private.** No deployment names, internal URLs, test accounts or secrets, even in tests, comments or commit messages. Everything built into an extension is public, so a real secret must never reach a build.
+- **Backend functions.** `chromium/convex-api/` declares the backend functions the extension calls, by hand. Add only what the extension uses. The backend can't be type-checked from here, and installed copies keep calling old signatures, so treat these as a contract.
+- **Words.** Use the terms in [GLOSSARY.md](GLOSSARY.md) in code, UI text and docs.
+- **Capture-first.** Extensions never write to the browser's native bookmarks. See [docs/adr](docs/adr).
+- **Permissions are public promises.** A new permission, host or kind of data sent anywhere needs its privacy disclosure updated too. Call it out in the PR.
+- **No remote code.** No code loaded and run from a server, and no `eval`. Store policy requires both.
+- **New browsers** get their own directory at the root, with their own package and CI matrix entry.
