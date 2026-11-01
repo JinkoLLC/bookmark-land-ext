@@ -7,7 +7,9 @@ node_modules/
 !.env.production.example
 *.zip
 
-# Local agent tooling: skills and their config stay on your machine.
+# Local agent tooling: instructions, skills and their config stay on your machine.
+CLAUDE.md
+AGENTS.md
 .claude/
 .agents/
 .pi/
