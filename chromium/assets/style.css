@@ -1,0 +1,108 @@
+@import "tailwindcss";
+
+/*
+ * Blue accent tokens copied from web/src/app/globals.css (the web app's
+ * --primary/--ring values). Only the accent is mirrored here — the rest of
+ * the popup uses stock Tailwind colors. Dark values follow the OS theme
+ * since the extension has no theme switcher.
+ */
+:root {
+  --primary: oklch(0.614 0.196 253.1);
+  --primary-foreground: oklch(0.985 0 0);
+  --ring: oklch(0.614 0.196 253.1);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --primary: oklch(0.65 0.18 253);
+    --primary-foreground: oklch(0.985 0 0);
+    --ring: oklch(0.65 0.18 253);
+  }
+}
+
+@theme inline {
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-ring: var(--ring);
+}
+
+.tiptap-extension-editor .ProseMirror {
+  min-height: 18rem;
+  outline: none;
+}
+
+.tiptap-extension-editor:focus-within {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+.tiptap-extension-editor .ProseMirror > * + * {
+  margin-top: 0.5rem;
+}
+
+.tiptap-extension-editor h2 {
+  font-size: 1rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.tiptap-extension-editor h3 {
+  font-size: 0.95rem;
+  font-weight: 650;
+  line-height: 1.4;
+}
+
+.tiptap-extension-editor ul,
+.tiptap-extension-editor ol {
+  padding-left: 1.25rem;
+}
+
+.tiptap-extension-editor ul {
+  list-style: disc;
+}
+
+.tiptap-extension-editor ol {
+  list-style: decimal;
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] {
+  list-style: none;
+  padding-left: 0;
+}
+
+.tiptap-extension-editor li[data-type="taskItem"] {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.tiptap-extension-editor li[data-type="taskItem"] > label {
+  flex: 0 0 auto;
+  user-select: none;
+}
+
+.tiptap-extension-editor li[data-type="taskItem"] > div {
+  flex: 1 1 auto;
+}
+
+.tiptap-extension-editor a {
+  color: var(--primary);
+  text-decoration: underline;
+}
+
+.tiptap-extension-editor .is-editor-empty:first-child::before {
+  color: #737373;
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Site security details under a side-panel row (site-risk.tsx). */
+@keyframes bl-slide-down {
+  from { opacity: 0; transform: translateY(-4px); clip-path: inset(0 0 100% 0); }
+  to { opacity: 1; transform: none; clip-path: inset(0 0 0 0); }
+}
+.bl-slide-down { animation: bl-slide-down 180ms ease-out; }
+@media (prefers-reduced-motion: reduce) {
+  .bl-slide-down { animation: none; }
+}

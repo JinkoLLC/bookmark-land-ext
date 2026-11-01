@@ -1,0 +1,13 @@
+{
+  "extends": "./.wxt/tsconfig.json",
+  "compilerOptions": {
+    "strict": true,
+    "jsx": "react-jsx",
+    // wxt 0.21 turned these on in its generated base config; the code predates them.
+    "noUncheckedIndexedAccess": false,
+    "verbatimModuleSyntax": false,
+    "noImplicitOverride": false,
+    "esModuleInterop": true,
+    "resolveJsonModule": true
+  }
+}

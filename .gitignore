@@ -1,0 +1,15 @@
+node_modules/
+.output/
+.wxt/
+.env
+.env.*
+!.env.example
+!.env.production.example
+*.zip
+
+# Local agent tooling: skills and their config stay on your machine.
+.claude/
+.agents/
+.pi/
+docs/agents/
+skills/

@@ -1,0 +1,64 @@
+{
+  "name": "bookmark-land-ext-chromium",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.22.1"
+  },
+  "scripts": {
+    "dev": "wxt",
+    "build": "wxt build",
+    "zip": "wxt zip",
+    "package:store": "node scripts/store-package.mjs",
+    "compile": "tsc --noEmit",
+    "lint": "eslint . --max-warnings 0",
+    "test": "vitest run",
+    "postinstall": "wxt prepare"
+  },
+  "dependencies": {
+    "@clerk/chrome-extension": "3.1.34",
+    "@tiptap/extension-link": "3.31.2",
+    "@tiptap/extension-placeholder": "3.31.2",
+    "@tiptap/extension-task-item": "3.31.2",
+    "@tiptap/extension-task-list": "3.31.2",
+    "@tiptap/react": "3.31.2",
+    "@tiptap/starter-kit": "3.26.1",
+    "convex": "1.40.0",
+    "lucide-react": "1.17.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.0",
+    "@types/chrome": "^0.1.43",
+    "@types/react": "19.2.16",
+    "@types/react-dom": "19.2.3",
+    "@typescript-eslint/eslint-plugin": "8.60.1",
+    "@typescript-eslint/parser": "8.60.1",
+    "@wxt-dev/module-react": "1.2.2",
+    "eslint": "10.4.1",
+    "jszip": "3.10.1",
+    "tailwindcss": "4.3.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.12",
+    "wxt": "0.21.4"
+  },
+  "overrides": {
+    "ws": "8.21.0",
+    "esbuild": "0.28.1",
+    "tmp": "0.2.7",
+    "shell-quote": "1.9.0",
+    "jayson": {
+      "uuid": "11.1.1"
+    },
+    "node-notifier": {
+      "uuid": "11.1.1"
+    },
+    "adm-zip": "0.6.0",
+    "postcss": "8.5.23",
+    "brace-expansion": "5.0.9",
+    "nanoid": "3.3.18"
+  },
+  "license": "MIT"
+}
