@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        package: [chromium]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: ${{ matrix.package }}
+    env:
+      # Placeholders: the build only needs well-formed values.
+      WXT_CLERK_PUBLISHABLE_KEY: pk_test_placeholder
+      WXT_CONVEX_URL: https://placeholder.convex.cloud
+      WXT_CLERK_FRONTEND_API: https://placeholder.clerk.accounts.dev
+      WXT_CLERK_SYNC_HOST: http://localhost
+      WXT_WEB_APP_URL: http://localhost:3000
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: ${{ matrix.package }}/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run compile
+      - run: npm test
+      - run: npm run build
+
+  # The `ci` check is required on main; it passes only when every package passes.
+  ci:
+    needs: test
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - run: test "${{ needs.test.result }}" = success

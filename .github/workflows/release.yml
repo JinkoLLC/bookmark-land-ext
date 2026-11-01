@@ -1,0 +1,44 @@
+name: Release
+
+# Builds the store package when a maintainer pushes a tag (chromium-v1.0.0) and attaches it to a
+# GitHub release. Uploading to the Chrome Web Store stays a manual step. The values come from
+# repository variables, not secrets: they are public identifiers that ship inside the extension.
+on:
+  push:
+    tags: ["chromium-v*.*.*"]
+
+permissions:
+  contents: write # create the GitHub release
+
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: chromium
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: chromium/package-lock.json
+      - name: Check the tag matches package.json
+        run: test "chromium-v$(node -p 'require("./package.json").version')" = "$GITHUB_REF_NAME"
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run compile
+      - run: npm test
+      - run: npm run package:store
+        env:
+          WXT_CLERK_PUBLISHABLE_KEY: ${{ vars.WXT_CLERK_PUBLISHABLE_KEY }}
+          WXT_CONVEX_URL: ${{ vars.WXT_CONVEX_URL }}
+          WXT_CLERK_FRONTEND_API: ${{ vars.WXT_CLERK_FRONTEND_API }}
+          WXT_CLERK_SYNC_HOST: ${{ vars.WXT_CLERK_SYNC_HOST }}
+          WXT_WEB_APP_URL: ${{ vars.WXT_WEB_APP_URL }}
+      - run: gh release create "$GITHUB_REF_NAME" .output/*-chrome.zip --generate-notes --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
