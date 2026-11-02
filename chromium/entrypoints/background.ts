@@ -378,6 +378,14 @@ export default defineBackground(() => {
   // pending-error record (storage.session) that the popup shows with a
   // retry on its next open, plus a red "!" on the icon for that tab.
 
+  // The web app pings to learn the extension is installed (externally_connectable
+  // limits senders to the web app origin). Answers with the version only.
+  browser.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
+    if ((message as { type?: unknown } | null)?.type === "ping") {
+      sendResponse({ version: browser.runtime.getManifest().version });
+    }
+  });
+
   browser.runtime.onInstalled.addListener(({ reason }) => {
     if (reason === "install") {
       // First run: the toolbar icon is unpinned by default, so a store

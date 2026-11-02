@@ -99,6 +99,15 @@ describe("store manifest", () => {
     ).toBe(true);
   });
 
+  it("accepts external connections from the web app only", () => {
+    expect(
+      validateStoreManifest({
+        ...safeManifest(),
+        externally_connectable: { matches: ["https://bookmark.land/*"] },
+      }),
+    ).toBe(true);
+  });
+
   it.each([
     ["the unpacked key", { key: "stable-unpacked-key" }],
     ["an extra permission", { permissions: [...AUDITED_PERMISSIONS, "history"] }],
@@ -112,7 +121,8 @@ describe("store manifest", () => {
     ["a non-numeric version", { version: "1.0.0-beta" }],
     ["an all-zero version", { version: "0.0.0" }],
     ["content scripts", { content_scripts: [{ matches: ["<all_urls>"], js: ["content.js"] }] }],
-    ["external connections", { externally_connectable: { matches: ["https://example.com/*"] } }],
+    ["external connections from another origin", { externally_connectable: { matches: ["https://example.com/*"] } }],
+    ["extra external connections", { externally_connectable: { matches: ["https://bookmark.land/*"], ids: ["*"] } }],
   ])("rejects %s", (_label, patch) => {
     expect(() => validateStoreManifest({ ...safeManifest(), ...patch })).toThrow();
   });

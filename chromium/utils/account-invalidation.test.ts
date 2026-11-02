@@ -32,6 +32,7 @@ vi.mock("wxt/browser", () => {
             fake.messageListeners.splice(fake.messageListeners.indexOf(listener), 1),
         },
         onInstalled: event(),
+        onMessageExternal: event(),
         setUninstallURL: async () => {},
       },
       cookies: {

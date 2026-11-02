@@ -213,8 +213,13 @@ export function validateStoreManifest(manifest, expectedFapiOrigin) {
   for (const field of ["optional_permissions", "optional_host_permissions"]) {
     if (Object.hasOwn(manifest, field)) fail(`manifest.${field} is not approved`);
   }
-  if (Object.hasOwn(manifest, "externally_connectable")) {
-    fail("manifest.externally_connectable is not approved");
+  // Only the web app may message the extension (it pings to hide its install prompt).
+  if (
+    Object.hasOwn(manifest, "externally_connectable") &&
+    JSON.stringify(manifest.externally_connectable) !==
+      JSON.stringify({ matches: [`${PRODUCTION_WEB_ORIGIN}/*`] })
+  ) {
+    fail(`manifest.externally_connectable must be exactly ${PRODUCTION_WEB_ORIGIN}/*`);
   }
   if (Object.hasOwn(manifest, "content_scripts")) {
     fail("manifest.content_scripts is not approved");
