@@ -120,6 +120,8 @@ export default defineConfig({
           description: "Save the current page to bookmark.land",
         },
       },
+      // Lets the web app ping the extension so it can hide its install prompt.
+      externally_connectable: { matches: [`${env("WXT_WEB_APP_URL")}/*`] },
       host_permissions: [
         `${env("WXT_CLERK_SYNC_HOST")}/*`,
         `${env("WXT_CONVEX_URL")}/*`,
