@@ -97,6 +97,18 @@ The extension reads native bookmarks with the browser bookmarks permission and
 calls the authenticated Convex action `api.importTree.importTree`; it never
 writes back to the native bookmark tree.
 
+The bookmark.land onboarding can start the same import for a new user. The web
+app (the only origin in `externally_connectable`) sends the extension two
+messages, and nothing else is answered:
+
+| Message | Reply | Effect |
+| --- | --- | --- |
+| `{ type: "ping" }` | `{ version }` | Tells the web app the extension is installed. |
+| `{ type: "open-import" }` | `{ ok: true }`, sent before the tab opens | Opens the import page in a new tab as `/import.html?return=<web app tab id>`. When `return` is present, the last screen's main button is **Back to setup**: it focuses that tab and closes the import tab (the library opens instead if that tab is gone). |
+
+Extensions before 1.0.3 ignore `open-import` and send no reply, so the web app
+does not wait for one.
+
 The destination picker defaults to a top-level `Imported Bookmarks` Collection,
 creating it if needed and reusing the active Collection on later imports.
 Users can also import at the top level of their library, under an existing

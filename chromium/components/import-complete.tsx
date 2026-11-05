@@ -28,15 +28,30 @@ const hostOf = (url: string) => {
 export function ImportComplete({
   result,
   sample,
+  returnTabId = null,
   onImportMore,
 }: {
   result: ImportResult;
   /** The selection in tree order; may include ones that were duplicates. */
   sample: { url: string; title?: string }[];
+  /** The bookmark.land setup tab that opened this import; the main button returns there. */
+  returnTabId?: number | null;
   onImportMore: () => void;
 }) {
   const links = importLinks(result);
   const festive = importAddedAnything(result);
+  const libraryPath = festive ? links.primaryPath : "/dashboard";
+  // The setup tab may have been closed since: then this is the usual "open the library".
+  const backToSetup = async (tabId: number) => {
+    try {
+      const tab = await browser.tabs.update(tabId, { active: true });
+      if (!tab) throw new Error("setup tab is gone");
+      await browser.windows.update(tab.windowId, { focused: true });
+      window.close();
+    } catch {
+      openWebPath(libraryPath);
+    }
+  };
   const added = result.imported + result.restored;
   const shown = sample.slice(0, Math.min(SAMPLE_SIZE, added));
   // With duplicates in the selection the sample may list a few that were
@@ -120,14 +135,26 @@ export function ImportComplete({
         </section>
       )}
 
+      {returnTabId !== null && (
+        <p className="relative text-center text-sm font-medium text-emerald-900 dark:text-emerald-100">
+          Go back to setup to finish.
+        </p>
+      )}
+
       <div className="relative flex flex-wrap items-center gap-3">
         <button
           type="button"
           autoFocus
-          onClick={() => openWebPath(festive ? links.primaryPath : "/dashboard")}
+          onClick={() =>
+            returnTabId !== null ? void backToSetup(returnTabId) : openWebPath(libraryPath)
+          }
           className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:-translate-y-0.5 hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-ring"
         >
-          {festive ? "See my imported bookmarks on bookmark.land" : "Open my library"}
+          {returnTabId !== null
+            ? "Back to setup"
+            : festive
+              ? "See my imported bookmarks on bookmark.land"
+              : "Open my library"}
           <ArrowRight className="h-4 w-4" aria-hidden="true" />
         </button>
         <button

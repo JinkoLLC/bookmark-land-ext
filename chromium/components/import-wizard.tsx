@@ -24,6 +24,7 @@ import { FolderNode, FolderCheckbox } from "@/components/import-folders";
 import { AuthStalled } from "@/components/auth-stalled";
 import { ImportComplete } from "@/components/import-complete";
 import type { ImportResult } from "@/utils/import-result";
+import { parseReturnTabId } from "@/utils/setup-return";
 
 
 /**
@@ -194,6 +195,7 @@ function Wizard() {
       <ImportComplete
         result={summary}
         sample={model.bookmarks}
+        returnTabId={parseReturnTabId(window.location.search)}
         onImportMore={() => {
           setSummary(null);
           setPhase("preview");

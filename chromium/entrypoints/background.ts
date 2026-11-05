@@ -4,6 +4,7 @@ import { browser } from "wxt/browser";
 import { isSaveableUrl, prepareSaveArgs } from "@/utils/quick-save";
 import { REFRESH_BADGE_MESSAGE } from "@/utils/messages";
 import { badgeFor } from "@/utils/badge";
+import { OPEN_IMPORT_MESSAGE, importPagePath } from "@/utils/setup-return";
 import { extractDomain } from "../shared/url";
 import {
   GET_ACCOUNT_MESSAGE,
@@ -380,9 +381,18 @@ export default defineBackground(() => {
 
   // The web app pings to learn the extension is installed (externally_connectable
   // limits senders to the web app origin). Answers with the version only.
-  browser.runtime.onMessageExternal.addListener((message, _sender, sendResponse) => {
-    if ((message as { type?: unknown } | null)?.type === "ping") {
+  // `open-import` (the web app's onboarding) opens the Browser import in a new
+  // tab; it replies at once and carries the sender's tab id so the import's
+  // last screen can return there. Nothing else is exposed.
+  browser.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
+    const type = (message as { type?: unknown } | null)?.type;
+    if (type === "ping") {
       sendResponse({ version: browser.runtime.getManifest().version });
+    } else if (type === OPEN_IMPORT_MESSAGE) {
+      sendResponse({ ok: true });
+      void browser.tabs.create({
+        url: browser.runtime.getURL(importPagePath(sender.tab?.id)),
+      });
     }
   });
 
