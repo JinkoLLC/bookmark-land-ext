@@ -221,7 +221,8 @@ Per [ADR-0002](../docs/adr/0002-site-security-passive-only.md) this only runs si
 
 Installing opens `https://bookmark.land/extension/welcome` once (pin the
 icon, sign in, how to save); uninstalling opens
-`https://bookmark.land/extension/uninstalled`. Clerk's Solana wallet screen is replaced by a stub at
+`https://bookmark.land/extension/uninstalled?v=<version>` (the version shows up in
+feedback sent from that page). Clerk's Solana wallet screen is replaced by a stub at
 build time (`wxt.config.ts` alias, guarded by `utils/clerk-ui-stub.test.ts`)
 so no unused Web3 code ships in the package.
 
