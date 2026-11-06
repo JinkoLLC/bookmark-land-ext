@@ -460,7 +460,7 @@ export default defineBackground(() => {
   };
 
   void browser.runtime.setUninstallURL(
-    `${import.meta.env.WXT_WEB_APP_URL}/extension/uninstalled`,
+    `${import.meta.env.WXT_WEB_APP_URL}/extension/uninstalled?v=${browser.runtime.getManifest().version}`,
   );
 
   // Keyboard shortcut: save the active tab right away, then open the popup
