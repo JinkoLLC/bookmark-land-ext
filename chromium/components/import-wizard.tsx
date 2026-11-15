@@ -181,6 +181,8 @@ function Wizard() {
   );
   const merged = useMemo(() => new Set(model?.mergedFolderIds), [model]);
   const destinationArg = destinationArgFor(destination);
+  // An existing collection may be shown on a live page: no import before its notice can appear.
+  const feedsPending = destination.kind === "existing" && collectionFeeds === undefined;
 
   if (!roots || !model) {
     return (
@@ -217,7 +219,7 @@ function Wizard() {
   const start = async () => {
     // Re-derived so the default collection is named after the click.
     const arg = destinationArgFor(destination, new Date());
-    if (!arg || phase === "importing") return;
+    if (!arg || phase === "importing" || feedsPending) return;
     setPhase("importing");
     try {
       const result = await runImport({
@@ -335,7 +337,7 @@ function Wizard() {
 
         <button
           type="button"
-          disabled={phase === "importing" || nothingSelected || destinationArg === null}
+          disabled={phase === "importing" || nothingSelected || destinationArg === null || feedsPending}
           onClick={() => void start()}
           className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:-translate-y-0.5 hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-ring disabled:translate-y-0 disabled:opacity-50"
         >
