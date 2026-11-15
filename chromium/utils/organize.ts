@@ -48,6 +48,25 @@ export function buildCollectionOptions(
   return out;
 }
 
+export interface CollectionFeed {
+  collectionId: string;
+  pages: unknown[];
+}
+
+/** How many live pages show each collection: a bookmark saved into one is public there. */
+export function livePageCounts(feeds: CollectionFeed[] | undefined): Map<string, number> {
+  return new Map((feeds ?? []).map((feed) => [feed.collectionId, feed.pages.length]));
+}
+
+/** The warning for a collection that live pages show; undefined when none does. */
+export function pageFeedNote(count: number | undefined, what: "bookmark" | "import"): string | undefined {
+  if (!count) return undefined;
+  const pages = count === 1 ? "1 live page" : `${count} live pages`;
+  return what === "bookmark"
+    ? `This bookmark appears on ${pages}: its title, site and link.`
+    : `Bookmarks imported into this collection appear on ${pages}: each title, site and link.`;
+}
+
 /** Ranks tag suggestions for the input: prefix matches first, then substring
  * matches, alphabetical within each group; tags already on the bookmark are
  * excluded. Empty input suggests nothing (the datalist would just be noise). */

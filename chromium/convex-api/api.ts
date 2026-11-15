@@ -82,6 +82,12 @@ type SubscriptionInfo = {
   storage: { usedBytes: number; limit: number; maxFileBytes: number; tier: Plan };
 };
 
+/** A collection that live pages show, with those pages. */
+type CollectionFeed = {
+  collectionId: Id<"collections">;
+  pages: { pageId: string; path: string; visibility: "public" | "unlisted" | "password" }[];
+};
+
 type ImportDestination = { type: "root" } | { type: "create"; name: string } | { type: "collection"; id: Id<"collections"> };
 
 export const api = {
@@ -194,5 +200,8 @@ export const api = {
   },
   tags: {
     list: query<Record<string, never>, Tag[]>("tags:list"),
+  },
+  userPages: {
+    collectionFeeds: query<Record<string, never>, CollectionFeed[]>("userPages:collectionFeeds"),
   },
 };

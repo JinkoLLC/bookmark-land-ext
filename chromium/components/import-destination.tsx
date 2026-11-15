@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import type { CollectionOption } from "@/utils/organize";
+import { pageFeedNote, type CollectionOption } from "@/utils/organize";
 import {
   importedCollectionName,
   type ImportDestination,
@@ -14,12 +14,15 @@ export function DestinationPicker({
   value,
   onChange,
   options,
+  onPage,
   loading = false,
   disabled = false,
 }: {
   value: ImportDestination;
   onChange: (next: ImportDestination) => void;
   options: CollectionOption[];
+  /** How many live pages show each collection: an import into one is public there. */
+  onPage: Map<string, number>;
   loading?: boolean;
   disabled?: boolean;
 }) {
@@ -41,6 +44,7 @@ export function DestinationPicker({
           onSelect={() => onChange({ kind: "existing" })}
         >
           {value.kind === "existing" && (
+            <>
             <select
               aria-label="Destination collection"
               value={value.id ?? ""}
@@ -54,10 +58,16 @@ export function DestinationPicker({
               </option>
               {options.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {"\u00A0".repeat(o.depth * 3) + o.name}
+                  {"\u00A0".repeat(o.depth * 3) + o.name + (onPage.has(o.id) ? " · on a page" : "")}
                 </option>
               ))}
             </select>
+            {pageFeedNote(onPage.get(value.id ?? ""), "import") && (
+              <p role="note" className="mt-2 text-sm text-slate-700 dark:text-slate-300">
+                {pageFeedNote(onPage.get(value.id ?? ""), "import")}
+              </p>
+            )}
+            </>
           )}
         </Choice>
         <Choice

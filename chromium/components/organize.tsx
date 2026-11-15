@@ -3,7 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
 import { ConvexError } from "convex/values";
-import { buildCollectionOptions, suggestTags } from "@/utils/organize";
+import { buildCollectionOptions, livePageCounts, pageFeedNote, suggestTags } from "@/utils/organize";
 import { CollectionGlyph, Chevron } from "@/components/collection-glyph";
 
 /**
@@ -26,9 +26,21 @@ export function OrganizeSection({ bookmarkId }: { bookmarkId: Id<"bookmarks"> })
         />
         <FavoriteToggle bookmarkId={bookmarkId} isFavorite={bookmark.isFavorite} />
       </div>
+      <PageFeedNote collectionId={bookmark.collectionId} />
       <TagEditor bookmarkId={bookmarkId} />
     </div>
   );
+}
+
+/** Says that the bookmark is public, when its collection is shown on a live page. */
+function PageFeedNote({ collectionId }: { collectionId?: Id<"collections"> }) {
+  const feeds = useQuery(api.userPages.collectionFeeds);
+  const note = pageFeedNote(livePageCounts(feeds).get(collectionId ?? ""), "bookmark");
+  return note ? (
+    <p role="note" className="rounded-md border border-neutral-200 bg-neutral-50 px-2 py-1 dark:border-neutral-700 dark:bg-neutral-800">
+      {note}
+    </p>
+  ) : null;
 }
 
 function CollectionPicker({
@@ -40,6 +52,8 @@ function CollectionPicker({
 }) {
   const collections = useQuery(api.collections.list);
   const move = useMutation(api.bookmarkMutations.moveToCollection);
+  // Collections a live page shows: what is saved there is public.
+  const onPage = livePageCounts(useQuery(api.userPages.collectionFeeds));
   const [open, setOpen] = useState(false);
   const options = buildCollectionOptions(collections ?? []);
   const selected = options.find((o) => o.id === collectionId);
@@ -65,6 +79,7 @@ function CollectionPicker({
         <span className="min-w-0 flex-1 truncate">
           {selected?.name ?? "Unsorted"}
         </span>
+        {selected && onPage.has(selected.id) && <span className="shrink-0 text-neutral-600 dark:text-neutral-400">· on a page</span>}
         <Chevron open={open} className="h-3 w-3 opacity-50" />
       </button>
       {open && (
@@ -101,6 +116,7 @@ function CollectionPicker({
                   className="h-3.5 w-3.5"
                 />
                 <span className="min-w-0 flex-1 truncate">{o.name}</span>
+                {onPage.has(o.id) && <span className="shrink-0 text-neutral-600 dark:text-neutral-400">· on a page</span>}
               </button>
             ))}
           </div>

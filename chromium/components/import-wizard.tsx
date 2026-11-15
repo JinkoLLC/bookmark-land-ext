@@ -15,7 +15,7 @@ import {
   destinationBaseDepth,
   type ImportDestination,
 } from "@/utils/import-destination";
-import { buildCollectionOptions } from "@/utils/organize";
+import { buildCollectionOptions, livePageCounts } from "@/utils/organize";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { useStalled } from "@/hooks/use-stalled";
 import { allowanceWarningFor } from "@/utils/allowance";
@@ -146,6 +146,7 @@ function Wizard() {
   // Session summary — remaining allowance for the over-limit warning.
   const sessionSummary = useQuery(api.subscriptions.getSubscriptionInfo);
   const collections = useQuery(api.collections.list);
+  const collectionFeeds = useQuery(api.userPages.collectionFeeds);
 
   useEffect(() => {
     let cancelled = false;
@@ -292,6 +293,7 @@ function Wizard() {
           value={destination}
           onChange={setDestination}
           options={options}
+          onPage={livePageCounts(collectionFeeds)}
           loading={collections === undefined}
           disabled={phase === "importing" || nothingSelected}
         />
