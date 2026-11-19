@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
 import { useAuth, useUser } from "@clerk/chrome-extension";
 import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/api";
+import type { FunctionReturnType } from "convex/server";
 import { browser } from "wxt/browser";
-import { LogOut, MessageSquare, PanelRight, Settings, User } from "lucide-react";
+import { ExternalLink, LogOut, PanelRight, Settings, User } from "lucide-react";
 import { FeedbackForm } from "@/components/feedback-form";
 import {
   getAccountEmailFromBackground,
@@ -11,14 +12,28 @@ import {
 } from "@/utils/auth-token";
 import { useStalled } from "@/hooks/use-stalled";
 import { derivePopupAuthState } from "@/utils/popup-state";
+import { moveIndex } from "@/utils/list-keys";
 import { QuickSaveSection } from "@/components/quick-save";
 import { PendingErrorBanner } from "@/components/pending-error";
 import { AuthStalled } from "@/components/auth-stalled";
+import { StatusLine } from "@/components/status-line";
 import {
   LibraryErrorBoundary,
   LibraryErrorFallback,
 } from "@/components/library-error-boundary";
 
+const RING =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const MUTED = "text-neutral-500 dark:text-neutral-400";
+const OUTLINE_BUTTON = `rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800 ${RING}`;
+const HEADER =
+  "flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200 px-3 dark:border-neutral-800";
+
+/**
+ * A column capped at Chrome's 600 px popup limit: a fixed header, a middle
+ * region that scrolls on its own when its content doesn't fit, and (signed
+ * in) a fixed footer.
+ */
 export function Popup() {
   const { isLoaded, isSignedIn } = useAuth();
   const convexAuth = useConvexAuth();
@@ -36,16 +51,47 @@ export function Popup() {
   });
 
   return (
-    <div className="w-80 p-4 text-sm text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
-      {state === "loading" && <LoadingView />}
-      {state === "stalled" && <AuthStalled />}
-      {state === "signed-out" && <SignedOutView />}
-      {state === "signed-in" && (
-        <LibraryErrorBoundary>
+    <div className="flex max-h-[600px] w-80 flex-col bg-white text-sm text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
+      {state === "signed-in" ? (
+        <LibraryErrorBoundary
+          fallback={(retry) => (
+            <PlainView>
+              <LibraryErrorFallback onRetry={retry} />
+            </PlainView>
+          )}
+        >
           <SignedInView />
         </LibraryErrorBoundary>
+      ) : (
+        <PlainView>
+          {state === "loading" && <LoadingView />}
+          {state === "stalled" && <AuthStalled />}
+          {state === "signed-out" && <SignedOutView />}
+        </PlainView>
       )}
     </div>
+  );
+}
+
+function Brand() {
+  return (
+    <>
+      <img src="/icon/32.png" alt="" className="h-6 w-6 shrink-0" />
+      {/* The name gives way first when the header runs out of room. */}
+      <h1 className="min-w-0 flex-1 truncate font-semibold">bookmark.land</h1>
+    </>
+  );
+}
+
+/** The states without a library: logo and name over the content, no footer. */
+function PlainView({ children }: { children: ReactNode }) {
+  return (
+    <>
+      <header className={HEADER}>
+        <Brand />
+      </header>
+      <main className="flex min-h-0 flex-col gap-3 overflow-y-auto p-3">{children}</main>
+    </>
   );
 }
 
@@ -65,12 +111,21 @@ function useSaveShortcut(): string | null {
   return shortcut;
 }
 
+function openBookmarkLand() {
+  void browser.tabs.create({
+    url: `${import.meta.env.WXT_WEB_APP_URL}/dashboard`,
+  });
+  window.close();
+}
+
 function LoadingView() {
   return (
-    <div className="flex flex-col gap-3">
-      <p className="text-neutral-500">Loading…</p>
-      <OpenBookmarkLandButton />
-    </div>
+    <>
+      <p className={MUTED}>Loading…</p>
+      <button type="button" onClick={openBookmarkLand} className={OUTLINE_BUTTON}>
+        Open bookmark.land
+      </button>
+    </>
   );
 }
 
@@ -87,10 +142,10 @@ function SignedOutView() {
   const shortcut = useSaveShortcut();
 
   return (
-    <div className="flex flex-col gap-3">
+    <>
       <p>Sign in to bookmark.land to start saving pages.</p>
-      <ul className="list-disc space-y-1 pl-4 text-neutral-500">
-        <li>Click this icon, then <span className="font-medium text-neutral-700 dark:text-neutral-300">Add to bookmark.land</span>.</li>
+      <ul className={`list-disc space-y-1 pl-4 ${MUTED}`}>
+        <li>Click this icon, then <span className="font-medium text-neutral-700 dark:text-neutral-300">Save to bookmark.land</span>.</li>
         {shortcut && (
           <li>
             Press <kbd className="rounded border border-neutral-300 px-1 font-mono text-xs dark:border-neutral-700">{shortcut}</kbd> to save instantly.
@@ -101,51 +156,101 @@ function SignedOutView() {
       <button
         type="button"
         onClick={openSignIn}
-        className="rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-ring"
+        className={`rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 ${RING}`}
       >
         Sign in to bookmark.land
       </button>
-    </div>
+    </>
   );
+}
+
+/** True while the element's content is taller than its box. */
+function useOverflows(ref: RefObject<HTMLElement | null>): boolean {
+  const [overflows, setOverflows] = useState(false);
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    const check = () => setOverflows(element.scrollHeight > element.clientHeight);
+    const observer = new ResizeObserver(check);
+    observer.observe(element);
+    // The content's own box: it grows without the scroller's box changing.
+    if (element.firstElementChild) observer.observe(element.firstElementChild);
+    return () => observer.disconnect();
+  }, [ref]);
+  return overflows;
 }
 
 function SignedInView() {
   // The feedback form replaces the popup's content (a popup can't host a
-  // dialog bigger than itself); Back returns to the save view.
+  // dialog bigger than itself). The save view stays mounted underneath, so
+  // Back returns to it as it was, and to the link that opened the form.
   const [showFeedback, setShowFeedback] = useState(false);
-  if (showFeedback) return <FeedbackForm onBack={() => setShowFeedback(false)} />;
+  const feedbackLink = useRef<HTMLButtonElement>(null);
+  const wasInFeedback = useRef(false);
+  useEffect(() => {
+    if (!showFeedback && wasInFeedback.current) feedbackLink.current?.focus();
+    wasInFeedback.current = showFeedback;
+  }, [showFeedback]);
+
+  // Session summary — the authenticated read model for account limits and
+  // bookmark counts. Live, so a Quick save bumps the count in place.
+  const summary = useQuery(api.subscriptions.getSubscriptionInfo, {});
+  useEffect(() => {
+    if (summary === null) console.error("[extension] Subscription summary query returned no data");
+  }, [summary]);
+
+  const middle = useRef<HTMLElement>(null);
+  const scrolls = useOverflows(middle);
+  const link = `flex h-6 items-center underline underline-offset-2 hover:text-neutral-950 dark:hover:text-white rounded ${RING}`;
 
   return (
-    <div className="flex flex-col gap-3">
-      <PopupHeader onFeedback={() => setShowFeedback(true)} />
-      <PendingErrorBanner />
-      <QuickSaveSection />
-      <OpenLibraryPanelButton />
-      <OpenBookmarkLandButton variant="secondary" />
-      <button
-        type="button"
-        onClick={() =>
-          void browser.tabs.create({
-            url: browser.runtime.getURL("/import.html"),
-          })
-        }
-        className="rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
-      >
-        Import browser bookmarks
-      </button>
-      <footer className="flex flex-col gap-2 border-t border-neutral-200 pt-3 dark:border-neutral-800">
-        <LibrarySummary />
-        <button
-          type="button"
-          onClick={() => setShowFeedback(true)}
-          className={`${OUTLINE_BUTTON} flex items-center justify-center gap-2`}
+    <>
+      {showFeedback && <FeedbackForm onBack={() => setShowFeedback(false)} />}
+      <div className={showFeedback ? "hidden" : "contents"}>
+        <PopupHeader />
+        <main
+          ref={middle}
+          aria-label="This page"
+          // A stop of its own only when there is something to scroll.
+          tabIndex={scrolls ? 0 : undefined}
+          className="min-h-0 flex-1 overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
         >
-          <MessageSquare className="h-4 w-4" aria-hidden="true" />
-          Send feedback
-        </button>
-        <PrivacyNote />
-      </footer>
-    </div>
+          <div className="flex flex-col gap-2 p-3">
+            <PendingErrorBanner />
+            <QuickSaveSection />
+            {summary === null && (
+              <LibraryErrorFallback onRetry={() => window.location.reload()} />
+            )}
+            <PrivacyNote />
+          </div>
+        </main>
+        <footer className="flex shrink-0 flex-col border-t border-neutral-200 px-3 pb-2 pt-[7px] text-xs text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
+          {summary !== null && <PlanLine summary={summary} />}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() =>
+                void browser.tabs.create({
+                  url: browser.runtime.getURL("/import.html"),
+                })
+              }
+              className={link}
+            >
+              Import browser bookmarks
+            </button>
+            <span aria-hidden="true">·</span>
+            <button
+              ref={feedbackLink}
+              type="button"
+              onClick={() => setShowFeedback(true)}
+              className={link}
+            >
+              Send feedback
+            </button>
+          </div>
+        </footer>
+      </div>
+    </>
   );
 }
 
@@ -153,52 +258,25 @@ function SignedInView() {
  * In-product disclosure of the one piece of browsing activity the extension
  * uses: the active tab's address is checked against the user's library for
  * the saved-page badge. Chrome Web Store policy asks for this to be stated
- * in the UI, not only on the listing.
+ * in the UI, not only on the listing. Last block of the scrolling region:
+ * always reachable, never taking fixed space.
  */
 function PrivacyNote() {
   return (
-    <p className="text-xs text-neutral-500">
+    <p className={`text-xs ${MUTED}`}>
       While signed in, the address of the page you&apos;re viewing is checked
       against your library to show the saved badge, and its site against
       bookmark.land&apos;s Site security results when you open this popup.
-      Nothing is stored unless you save the page.{" "}
+      Nothing is added to your library unless you save the page.{" "}
       <a
         href={`${import.meta.env.WXT_WEB_APP_URL}/extension/privacy`}
         target="_blank"
         rel="noreferrer"
-        className="underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300"
+        className={`rounded underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300 ${RING}`}
       >
         Privacy
       </a>
     </p>
-  );
-}
-
-const FILLED_BUTTON =
-  "rounded-md bg-neutral-900 px-3 py-2 font-medium text-white hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 dark:bg-neutral-100 dark:text-neutral-950 dark:hover:bg-white";
-const OUTLINE_BUTTON =
-  "rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800";
-
-function OpenBookmarkLandButton({
-  variant = "primary",
-}: {
-  variant?: "primary" | "secondary";
-}) {
-  const openBookmarkLand = () => {
-    void browser.tabs.create({
-      url: `${import.meta.env.WXT_WEB_APP_URL}/dashboard`,
-    });
-    window.close();
-  };
-
-  return (
-    <button
-      type="button"
-      onClick={openBookmarkLand}
-      className={variant === "primary" ? FILLED_BUTTON : OUTLINE_BUTTON}
-    >
-      Open bookmark.land
-    </button>
   );
 }
 
@@ -229,52 +307,25 @@ function openLibraryPanel(windowId: number | null) {
   void browser.sidePanel.open({ windowId }).then(() => window.close());
 }
 
-/** The popup's main call to action once signed in. */
-function OpenLibraryPanelButton() {
-  const windowId = useActiveWindowId();
-  return (
-    <button
-      type="button"
-      disabled={windowId === null}
-      onClick={() => openLibraryPanel(windowId)}
-      className={`${FILLED_BUTTON} flex items-center justify-center gap-2`}
-    >
-      <PanelRight className="h-4 w-4" aria-hidden="true" />
-      Open Library panel
-    </button>
-  );
-}
-
-/** Logo and name, with a one-click Library panel button at the right. */
-function PopupHeader({ onFeedback }: { onFeedback: () => void }) {
+/** Logo and name, the labelled Library panel button, and the account menu. */
+function PopupHeader() {
   const windowId = useActiveWindowId();
   const email = useAccountEmail();
   return (
-    <div className="-mx-1 -mt-1 flex items-center justify-between gap-2 border-b border-neutral-200 pb-2 dark:border-neutral-800">
-      <span className="flex min-w-0 items-center gap-2 px-1">
-        <img src="/icon/32.png" alt="" className="h-6 w-6 shrink-0" />
-        <span className="min-w-0">
-          <span className="block font-semibold leading-tight">bookmark.land</span>
-          {/* Who the extension is signed in as, at the top where it belongs. */}
-          <span className="block truncate text-xs text-neutral-500" title={email}>
-            {email ? `Signed in as ${email}` : "Signed in"}
-          </span>
-        </span>
-      </span>
-      <span className="flex shrink-0 items-center gap-1">
-        <button
-          type="button"
-          disabled={windowId === null}
-          onClick={() => openLibraryPanel(windowId)}
-          aria-label="Open Library panel"
-          title="Open Library panel"
-          className="rounded-md p-1.5 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-50 dark:text-neutral-300 dark:hover:bg-neutral-800 dark:hover:text-white"
-        >
-          <PanelRight className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <AccountMenu email={email} onFeedback={onFeedback} />
-      </span>
-    </div>
+    <header className={`${HEADER} relative z-20`}>
+      <Brand />
+      <button
+        type="button"
+        disabled={windowId === null}
+        onClick={() => openLibraryPanel(windowId)}
+        title="Open Library panel"
+        className={`flex h-7 shrink-0 items-center gap-1.5 rounded-md border border-neutral-300 px-2 text-xs font-medium hover:bg-neutral-50 disabled:opacity-50 dark:border-neutral-700 dark:hover:bg-neutral-800 ${RING}`}
+      >
+        <PanelRight className="h-4 w-4" aria-hidden="true" />
+        Library panel
+      </button>
+      <AccountMenu email={email} />
+    </header>
   );
 }
 
@@ -300,31 +351,40 @@ function useAccountEmail(): string | undefined {
 }
 
 /**
- * The account button (the user's initial) and its menu. The extension has no
- * session of its own: it uses the bookmark.land session in this browser
- * (Clerk sync host), so signing out here signs out the website too, and the
- * menu says so.
+ * The account button (the user's initial) and its menu; the email is the
+ * button's name and the menu's first row. The extension has no session of
+ * its own: it uses the bookmark.land session in this browser (Clerk sync
+ * host), so signing out here signs out the website too, and the menu says so.
  */
-function AccountMenu({ email, onFeedback }: { email?: string; onFeedback: () => void }) {
+function AccountMenu({ email }: { email?: string }) {
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+
+  const items = () => [
+    ...(rootRef.current?.querySelectorAll<HTMLElement>('[role="menuitem"]:not(:disabled)') ?? []),
+  ];
 
   useEffect(() => {
-    if (!open) return;
-    const onPointer = (event: PointerEvent) => {
-      if (!menuRef.current?.contains(event.target as Node)) setOpen(false);
-    };
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") setOpen(false);
-    };
-    document.addEventListener("pointerdown", onPointer);
-    document.addEventListener("keydown", onKey);
-    return () => {
-      document.removeEventListener("pointerdown", onPointer);
-      document.removeEventListener("keydown", onKey);
-    };
+    // Focus moves into the menu, as the menu pattern asks.
+    if (open) rootRef.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus();
   }, [open]);
+
+  const onMenuKey = (event: React.KeyboardEvent) => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      event.stopPropagation();
+      setOpen(false);
+      buttonRef.current?.focus();
+      return;
+    }
+    const all = items();
+    const next = moveIndex(event.key, all.indexOf(document.activeElement as HTMLElement), all.length);
+    if (next === null) return;
+    event.preventDefault();
+    all[next].focus();
+  };
 
   const openSettings = () => {
     void browser.tabs.create({ url: `${import.meta.env.WXT_WEB_APP_URL}/settings` });
@@ -346,67 +406,67 @@ function AccountMenu({ email, onFeedback }: { email?: string; onFeedback: () => 
   };
 
   const initial = email?.trim()[0]?.toUpperCase();
-  const item =
-    "flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-ring disabled:opacity-60 dark:hover:bg-neutral-800";
+  const label = email ? `Account: ${email}` : "Account";
+  const item = `flex w-full items-center gap-2 rounded px-2 py-1.5 text-left hover:bg-neutral-100 focus:bg-neutral-100 disabled:opacity-60 dark:hover:bg-neutral-800 dark:focus:bg-neutral-800 ${RING}`;
 
   return (
-    <div ref={menuRef} className="relative">
+    <div
+      ref={rootRef}
+      className="relative shrink-0"
+      onKeyDown={open ? onMenuKey : undefined}
+      // Focus leaving (a click elsewhere, or Tab) closes the menu.
+      onBlur={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget)) setOpen(false);
+      }}
+    >
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setOpen(!open)}
         aria-haspopup="menu"
         aria-expanded={open}
-        aria-label="Account"
-        title={email ? `Account: ${email}` : "Account"}
-        className="flex h-7 w-7 items-center justify-center rounded-full bg-primary text-xs font-semibold text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-ring"
+        aria-label={label}
+        title={label}
+        className={`flex h-7 w-7 items-center justify-center rounded-full bg-neutral-200 text-xs font-semibold text-neutral-800 hover:bg-neutral-300 dark:bg-neutral-700 dark:text-neutral-100 dark:hover:bg-neutral-600 ${RING}`}
       >
-        {initial ?? <User className="h-4 w-4" aria-hidden="true" />}
+        {initial ? <span aria-hidden="true">{initial}</span> : <User className="h-4 w-4" aria-hidden="true" />}
       </button>
       {open && (
-        <div
-          role="menu"
-          aria-label="Account"
-          className="absolute right-0 top-9 z-20 w-60 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900"
-        >
-          <p className="truncate px-2 py-1.5 text-xs text-neutral-500" title={email}>
+        <div className="absolute right-0 top-9 w-60 rounded-lg border border-neutral-200 bg-white p-1 shadow-lg dark:border-neutral-700 dark:bg-neutral-900">
+          <p className={`truncate px-2 py-1.5 text-xs ${MUTED}`} title={email}>
             {email ?? "Signed in"}
           </p>
           <div className="my-1 border-t border-neutral-200 dark:border-neutral-800" />
-          <button type="button" role="menuitem" onClick={openSettings} className={item}>
-            <Settings className="h-4 w-4" aria-hidden="true" />
-            Account settings
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              setOpen(false);
-              onFeedback();
-            }}
-            className={item}
-          >
-            <MessageSquare className="h-4 w-4" aria-hidden="true" />
-            Send feedback
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => void doSignOut()}
-            disabled={signingOut}
-            className={`${item} text-red-600 dark:text-red-400`}
-          >
-            <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
-            <span>
-              {signingOut ? "Signing out…" : "Sign out"}
-              <span className="block text-xs text-neutral-500">
-                Of bookmark.land in this browser
+          <div role="menu" aria-label="Account">
+            <button type="button" role="menuitem" onClick={openBookmarkLand} className={item}>
+              <ExternalLink className="h-4 w-4" aria-hidden="true" />
+              Open bookmark.land
+            </button>
+            <button type="button" role="menuitem" onClick={openSettings} className={item}>
+              <Settings className="h-4 w-4" aria-hidden="true" />
+              Account settings
+            </button>
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => void doSignOut()}
+              disabled={signingOut}
+              className={item}
+            >
+              <LogOut className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
+              <span>
+                {signingOut ? "Signing out…" : "Sign out"}
+                {/* On the focused item's tint: one step darker than helper text. */}
+                <span className="block text-xs text-neutral-600 dark:text-neutral-400">
+                  Of bookmark.land in this browser
+                </span>
               </span>
-            </span>
-          </button>
+            </button>
+          </div>
           {failed && (
-            <p className="px-2 py-1 text-xs text-red-600 dark:text-red-400">
+            <StatusLine tone="error" role="alert" className="px-2 py-1 text-xs">
               Couldn&apos;t sign out. Check your connection and try again.
-            </p>
+            </StatusLine>
           )}
         </div>
       )}
@@ -414,22 +474,17 @@ function AccountMenu({ email, onFeedback }: { email?: string; onFeedback: () => 
   );
 }
 
-function LibrarySummary() {
-  // Session summary — the authenticated read model for account limits and
-  // bookmark counts. Live, so a Quick save bumps the count in place.
-  const summary = useQuery(api.subscriptions.getSubscriptionInfo, {});
-
+/** Plan and library size; the count keeps its denominator. */
+function PlanLine({
+  summary,
+}: {
+  summary: NonNullable<FunctionReturnType<typeof api.subscriptions.getSubscriptionInfo>> | undefined;
+}) {
   if (summary === undefined) {
-    return <p className="text-xs text-neutral-500">Loading your plan…</p>;
+    return <p className={`leading-[18px] ${MUTED}`}>Loading your plan…</p>;
   }
-
-  if (!summary) {
-    console.error("[extension] Subscription summary query returned no data");
-    return <LibraryErrorFallback onRetry={() => window.location.reload()} />;
-  }
-
   return (
-    <p className="flex justify-between text-xs text-neutral-500">
+    <p className={`flex justify-between leading-[18px] ${MUTED}`}>
       <span>
         <span className="font-medium capitalize text-neutral-700 dark:text-neutral-300">
           {summary.plan}

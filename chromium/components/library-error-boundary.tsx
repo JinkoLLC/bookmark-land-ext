@@ -1,4 +1,5 @@
 import { Component, type ErrorInfo, type ReactNode } from "react";
+import { StatusLine } from "@/components/status-line";
 
 /**
  * Catches render-time errors from the library views — most importantly the
@@ -9,7 +10,12 @@ import { Component, type ErrorInfo, type ReactNode } from "react";
  * dev-browser cookie repair before clerk-js mounts again.
  */
 export class LibraryErrorBoundary extends Component<
-  { children: ReactNode; fallbackClassName?: string },
+  {
+    children: ReactNode;
+    fallbackClassName?: string;
+    /** The surface's own frame around the fallback (the popup's header and main). */
+    fallback?: (retry: () => void) => ReactNode;
+  },
   { hasError: boolean }
 > {
   state = { hasError: false };
@@ -32,6 +38,7 @@ export class LibraryErrorBoundary extends Component<
 
   render() {
     if (this.state.hasError) {
+      if (this.props.fallback) return this.props.fallback(this.retry);
       return (
         <LibraryErrorFallback
           onRetry={this.retry}
@@ -54,17 +61,17 @@ export function LibraryErrorFallback({
   return (
     <div className={`flex flex-col gap-3 ${className ?? ""}`}>
       <div className="flex flex-col gap-1">
-        <p className="font-medium text-red-600 dark:text-red-400">
+        <StatusLine tone="error" role="alert" className="font-medium">
           Unable to load your library
-        </p>
-        <p className="text-neutral-500">
+        </StatusLine>
+        <p className="text-neutral-500 dark:text-neutral-400">
           Check your connection, then retry or reopen this window.
         </p>
       </div>
       <button
         type="button"
         onClick={onRetry}
-        className="rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
+        className="rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
       >
         Retry
       </button>

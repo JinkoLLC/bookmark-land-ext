@@ -15,14 +15,14 @@ export function AuthStalled() {
   };
   return (
     <div className="flex flex-col gap-3">
-      <p className="text-neutral-500">
+      <p className="text-neutral-500 dark:text-neutral-400">
         Can&apos;t verify your session right now. Opening bookmark.land
         usually refreshes it — then reopen this window.
       </p>
       <button
         type="button"
         onClick={openWebApp}
-        className="self-start rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-ring"
+        className="self-start rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         Open bookmark.land
       </button>

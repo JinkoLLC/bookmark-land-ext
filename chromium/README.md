@@ -68,12 +68,12 @@ The extension is capture-first: every save creates or updates a bookmark.land
 bookmark and never writes to Chrome's native bookmark tree. The toolbar popup
 uses a two-step Quick save flow: opening it checks whether the active page is
 already in your library, and an unsaved page is only written after you click
-**Add to bookmark.land**. The keyboard shortcut and context menus save
+**Save to bookmark.land**. The keyboard shortcut and context menus save
 directly.
 
 You can save from:
 
-- The toolbar popup for the active web page, then **Add to bookmark.land**.
+- The toolbar popup for the active web page, then **Save to bookmark.land**.
 - The keyboard shortcut (`Ctrl+Shift+S` on Windows/Linux, `Command+Shift+S`
   on macOS) saves the active page immediately, then opens the popup for
   organizing on Chrome 127+. Users can rebind it at

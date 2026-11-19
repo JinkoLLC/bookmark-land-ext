@@ -6,6 +6,7 @@ import {
   stateFromResult,
   stateFromError,
   deriveQuickSaveView,
+  limitSentence,
 } from "./quick-save";
 
 describe("isSaveableUrl", () => {
@@ -162,5 +163,13 @@ describe("deriveQuickSaveView", () => {
         saveState: null,
       }),
     ).toEqual({ kind: "already-saved", bookmarkId: "bm1" });
+  });
+});
+
+describe("limitSentence", () => {
+  it("names the plan's limit, and still reads well without one", () => {
+    expect(limitSentence(100)).toBe("You've reached your plan's limit of 100 bookmarks.");
+    expect(limitSentence(100000)).toBe("You've reached your plan's limit of 100,000 bookmarks.");
+    expect(limitSentence()).toBe("You've reached your plan's bookmark limit.");
   });
 });

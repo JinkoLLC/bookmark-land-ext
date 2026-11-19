@@ -2,17 +2,24 @@ import { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@convex/api";
 import { browser } from "wxt/browser";
+import { openUpgrade } from "@/components/quick-save";
+import { StatusLine } from "@/components/status-line";
 import { REFRESH_BADGE_MESSAGE } from "@/utils/messages";
+import { limitSentence } from "@/utils/quick-save";
 import {
   PENDING_ERROR_KEY,
   isPendingSilentError,
   type PendingSilentError,
 } from "@/utils/silent-save";
 
+const OUTLINE_BUTTON =
+  "rounded-md border border-neutral-300 px-3 py-1 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800";
+
 /**
  * Surfaces a failed silent save (context menu) the next time the popup
- * opens, with a retry. The record lives in storage.session until the retry
- * succeeds or the user dismisses it.
+ * opens: the address that failed, a way forward (Retry, or Upgrade after a
+ * limit refusal) and Dismiss. The record lives in storage.session until the
+ * retry succeeds or the user dismisses it.
  */
 export function PendingErrorBanner() {
   const [pending, setPending] = useState<PendingSilentError | null>(null);
@@ -47,33 +54,31 @@ export function PendingErrorBanner() {
   };
 
   return (
-    <div className="flex flex-col gap-2 rounded-md border border-red-300 p-2 dark:border-red-900">
-      <p className="font-medium text-red-600 dark:text-red-400">
+    <div className="flex flex-col gap-1 rounded-md border border-red-300 p-2 dark:border-red-900">
+      <StatusLine tone="error" className="font-medium">
         {pending.kind === "limit"
-          ? `A save failed: you've reached your plan's limit of ${pending.limit} bookmarks.`
+          ? `A right-click save failed. ${limitSentence(pending.limit)}`
           : "A save from the right-click menu failed."}
-      </p>
-      <p className="truncate text-neutral-500" title={pending.url}>
+      </StatusLine>
+      <p className="truncate text-xs text-neutral-500 dark:text-neutral-400" title={pending.url}>
         {pending.url}
       </p>
       {retryFailed && (
-        <p className="text-red-600 dark:text-red-400">Retry failed — still can&apos;t save.</p>
+        <StatusLine tone="error" role="alert" className="text-xs">
+          Retry failed. Still can&apos;t save.
+        </StatusLine>
       )}
-      <div className="flex gap-2">
-        {pending.kind === "retryable" && (
-          <button
-            type="button"
-            onClick={() => void retry()}
-            className="rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-ring"
-          >
+      <div className="mt-1 flex gap-2">
+        {pending.kind === "limit" ? (
+          <button type="button" onClick={openUpgrade} className={OUTLINE_BUTTON}>
+            Upgrade to save more
+          </button>
+        ) : (
+          <button type="button" onClick={() => void retry()} className={OUTLINE_BUTTON}>
             Retry
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => void clear()}
-          className="rounded-md border border-neutral-300 px-3 py-1.5 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
-        >
+        <button type="button" onClick={() => void clear()} className={OUTLINE_BUTTON}>
           Dismiss
         </button>
       </div>

@@ -63,7 +63,7 @@ export function SiteRiskNotice({ risk }: { risk: SiteRisk }) {
   return (
     <div
       role="alert"
-      className={`rounded-md border p-2.5 ${
+      className={`rounded-md border px-2.5 py-1.5 ${
         amber
           ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
           : "border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/60"
@@ -72,7 +72,7 @@ export function SiteRiskNotice({ risk }: { risk: SiteRisk }) {
       <div className="flex items-center gap-2">
         <ShieldAlert className={`h-5 w-5 shrink-0 ${colorFor(risk)}`} aria-hidden="true" />
         <div className="min-w-0 flex-1">
-          <p className="font-semibold">Security warning</p>
+          <p className="font-semibold leading-[18px]">Security warning</p>
           <p className="text-xs opacity-80">{LEVEL_LABEL[risk.riskLevel]} site</p>
         </div>
         <button
@@ -80,11 +80,11 @@ export function SiteRiskNotice({ risk }: { risk: SiteRisk }) {
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-controls={detailsId}
-          className="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+          className="flex min-h-6 shrink-0 items-center gap-0.5 rounded px-1.5 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Why?
           <ChevronDown
-            className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+            className={`h-3.5 w-3.5 motion-safe:transition-transform ${open ? "rotate-180" : ""}`}
             aria-hidden="true"
           />
         </button>
@@ -143,7 +143,7 @@ export function SiteRiskToggle({
       aria-controls={detailsId}
       aria-label={label}
       title={label}
-      className={`shrink-0 rounded p-1 hover:bg-neutral-200 focus-visible:outline-2 focus-visible:outline-ring dark:hover:bg-neutral-700 ${colorFor(risk)} ${open ? "bg-neutral-200 dark:bg-neutral-700" : ""}`}
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-neutral-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:hover:bg-neutral-700 ${colorFor(risk)} ${open ? "bg-neutral-200 dark:bg-neutral-700" : ""}`}
     >
       <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
     </button>
@@ -183,7 +183,10 @@ export function SiteRiskDetails({
       id={id}
       role="region"
       aria-label={`Site security for ${risk.site}`}
-      className={`bl-slide-down text-xs ${frame}`}
+      // In the popup the details scroll with the middle region; a stop of
+      // their own lets the keyboard land on them and bring them into view.
+      tabIndex={embedded ? 0 : undefined}
+      className={`bl-slide-down text-xs ${embedded ? "rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring " : ""}${frame}`}
     >
       {!embedded && (
         <div className="flex items-start justify-between gap-2">
@@ -192,7 +195,7 @@ export function SiteRiskDetails({
             type="button"
             onClick={onClose}
             aria-label="Close"
-            className="-m-1 rounded p-1 opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+            className="-m-1 flex h-6 w-6 shrink-0 items-center justify-center rounded opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -223,7 +226,7 @@ export function SiteRiskDetails({
                             href={`https://nvd.nist.gov/vuln/detail/${finding.cveId}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-medium underline underline-offset-2"
+                            className="rounded-sm font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                           >
                             {finding.cveId}
                           </a>
@@ -246,7 +249,7 @@ export function SiteRiskDetails({
           href={`${import.meta.env.WXT_WEB_APP_URL}/help/site-security`}
           target="_blank"
           rel="noreferrer"
-          className="font-medium underline underline-offset-2"
+          className="rounded-sm font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Learn more
         </a>

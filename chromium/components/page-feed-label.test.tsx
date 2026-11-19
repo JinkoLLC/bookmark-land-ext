@@ -9,6 +9,7 @@ const collection = (id: string, name: string) => ({ _id: id, name, order: 0 });
 
 vi.mock("convex/react", () => ({
   useMutation: () => () => undefined,
+  useQueries: () => ({ feeds }),
   useQuery: (reference: unknown) =>
     reference === api.userPages.collectionFeeds ? feeds
     : reference === api.bookmarks.get ? { collectionId: bookmarkCollection, isFavorite: false }
@@ -22,6 +23,8 @@ describe("a collection that a live page shows", () => {
     bookmarkCollection = "shown";
     const html = renderToStaticMarkup(<OrganizeSection bookmarkId={"b" as never} />);
     expect(html).toContain("· on a page");
+    // The picker's name is read from its content: what is shown, then what it is.
+    expect(html).toMatch(/aria-haspopup="listbox"[^>]*>.*Reading<\/span>.*· on a page<\/span><span class="sr-only">, collection</);
     expect(html).toContain("This bookmark appears on 1 live page: its title, site and link.");
   });
 
