@@ -77,18 +77,18 @@ export function importHeading(result: ImportResult): string {
   }
 }
 
-/** `planLimit`: the plan's bookmark limit when reaching it explains the skips. */
+/** `planLimit`: the plan's bookmark limit, when the library is at it after the import. */
 export function importSubtext(result: ImportResult, planLimit: number | null = null): string {
   const outcome = importOutcome(result);
   if (outcome === "imported")
     return "Your library just grew. Everything is searchable on bookmark.land and in the Library panel.";
   if (outcome === "already-here")
     return "Every bookmark you picked was already in your library, so nothing new was added.";
+  // Two facts side by side, not a cause: the result doesn't say why each bookmark was skipped.
+  if (planLimit !== null)
+    return `${bookmarks(result.skipped)} ${result.skipped === 1 ? "wasn't" : "weren't"} imported. Your library is at its ${formatCount(planLimit)}-bookmark limit.`;
   // "partial" counts the rest of the selection, "nothing" counts bookmarks.
   const skipped = outcome === "partial" ? formatCount(result.skipped) : bookmarks(result.skipped);
-  const verb = result.skipped === 1 ? "wasn't" : "weren't";
-  if (planLimit !== null)
-    return `${skipped} ${verb} imported because your plan's limit of ${bookmarks(planLimit)} was reached.`;
   const could = `${skipped} could not be imported.`;
   return outcome === "partial"
     ? `${could} What came over is searchable on bookmark.land and in the Library panel.`
@@ -96,7 +96,7 @@ export function importSubtext(result: ImportResult, planLimit: number | null = n
 }
 
 /** The counts line: only the counts that aren't zero. The skipped count is
- * left out: the subtext always states it, with its cause when known. */
+ * left out: the subtext always states it. */
 export function importCounts(result: ImportResult): string[] {
   const parts: [number, string][] = [
     [result.imported, "new"],
@@ -107,9 +107,9 @@ export function importCounts(result: ImportResult): string[] {
 }
 
 /**
- * The plan's limit, when it explains the skips: some were skipped and the
- * library's live count has reached the limit after the import. Skips below
- * the limit have another cause, so the limit isn't blamed for them.
+ * The plan's limit, when it is worth stating beside the skips: some were
+ * skipped and the library's live count has reached the limit after the
+ * import. Skips below the limit have another cause, so it isn't mentioned.
  */
 export function reachedPlanLimit(
   result: ImportResult,

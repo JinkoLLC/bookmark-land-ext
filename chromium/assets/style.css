@@ -83,6 +83,12 @@
 .tiptap-extension-editor li[data-type="taskItem"] > label {
   flex: 0 0 auto;
   user-select: none;
+  /* A 24 px target around the 13 px checkbox. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  min-height: 24px;
 }
 
 .tiptap-extension-editor li[data-type="taskItem"] > div {

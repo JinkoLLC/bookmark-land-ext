@@ -89,7 +89,7 @@ export function ImportComplete({
   useEffect(() => heading.current?.focus(), []);
 
   return (
-    <div className="relative flex min-w-0 flex-col gap-5 overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-b from-emerald-50 to-white p-4 shadow-sm sm:p-6 dark:border-emerald-900/60 dark:from-emerald-950/50 dark:to-slate-950/60">
+    <div data-import-result className="relative flex min-w-0 flex-col gap-5 overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-b from-emerald-50 to-white p-4 shadow-sm sm:p-6 dark:border-emerald-900/60 dark:from-emerald-950/50 dark:to-slate-950/60">
       {festive && <ConfettiBurst />}
 
       <div className="relative text-center">
@@ -123,9 +123,10 @@ export function ImportComplete({
           </h3>
           <ul className="divide-y divide-emerald-100 overflow-hidden rounded-xl border border-emerald-100 bg-white/80 dark:divide-emerald-900/50 dark:border-emerald-900/60 dark:bg-slate-900/70">
             {shown.map((b) => (
-              <li key={b.url} className="flex min-w-0 items-baseline gap-2 px-3 py-2 text-sm">
+              // On a phone the site sits under the title (as the Library panel's rows), so the title gets the full width.
+              <li key={b.url} className="flex min-w-0 flex-col px-3 py-2 text-sm sm:flex-row sm:items-baseline sm:gap-2">
                 <span className="truncate font-medium">{b.title?.trim() || hostOf(b.url)}</span>
-                <span className="max-w-[45%] shrink-0 truncate text-xs text-slate-600 dark:text-slate-300">
+                <span className="truncate text-xs text-slate-600 sm:max-w-[45%] sm:shrink-0 dark:text-slate-300">
                   {hostOf(b.url)}
                 </span>
               </li>
