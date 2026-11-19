@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImportModel, type NativeNode } from "./import-tree";
+import { allFoldersMerge, buildImportModel, type NativeNode } from "./import-tree";
 
 const bm = (id: string, url: string, title = `t-${id}`): NativeNode => ({
   id,
@@ -160,6 +160,7 @@ describe("buildImportModel", () => {
     // Both the root (for its loose bookmark) and the folder show as merged.
     expect(model.mergedFolderIds).toEqual(["1", "10"]);
     expect(model.importableCount).toBe(2);
+    expect(allFoldersMerge(model)).toBe(true);
   });
 
   it("names both targets when a deep tree meets a deep destination", () => {
@@ -175,6 +176,8 @@ describe("buildImportModel", () => {
     const model = buildImportModel(roots, NONE, 4, "Field trials");
     expect(model.folders.map((f) => f.name)).toEqual(["Bar", "Dev"]);
     expect(model.mergedInto).toEqual({ "11": "Dev", "12": "Dev" });
+    // One target, but not every folder merges: the rows keep their lines.
+    expect(allFoldersMerge(model)).toBe(false);
     expect(model.bookmarks.map((b) => b.folderKey)).toEqual(["root:1", "10"]);
   });
 

@@ -15,6 +15,7 @@ import {
 } from "convex/react";
 import { api } from "@convex/api";
 import type { Doc, Id } from "@convex/dataModel";
+import type { FunctionReturnType } from "convex/server";
 import { browser } from "wxt/browser";
 import { Globe } from "lucide-react";
 import { buildTree, flattenTree, type TreeNode } from "../shared/tree";
@@ -111,6 +112,10 @@ function PanelContent() {
   const [searchInput, setSearchInput] = useState("");
   // Deferred so fast typing doesn't fire a query per keystroke.
   const term = searchTermFor(useDeferredValue(searchInput));
+  const results = useQuery(
+    api.bookmarks.search,
+    term === null ? "skip" : { query: term },
+  );
   const data = useQuery(api.collections.listWithSidebarState);
   const subscription = useQuery(api.subscriptions.getSubscriptionInfo);
   const setExpanded = useMutation(api.collectionUiState.setExpanded);
@@ -136,8 +141,25 @@ function PanelContent() {
           className="w-full rounded-md border border-neutral-300 bg-transparent px-2 py-1.5 placeholder:text-neutral-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:placeholder:text-neutral-400"
         />
       </div>
+      {/* Always mounted, so a search's outcome is announced while focus stays in the field. */}
+      <p
+        role="status"
+        className={
+          term === null || results?.length
+            ? "sr-only"
+            : "px-4 pt-2 text-neutral-500 dark:text-neutral-400"
+        }
+      >
+        {term === null
+          ? ""
+          : results === undefined
+            ? "Searching…"
+            : results.length === 0
+              ? `No results for “${term}”.`
+              : `${results.length} ${results.length === 1 ? "result" : "results"}`}
+      </p>
       {term !== null ? (
-        <SearchResults term={term} />
+        <SearchResults results={results ?? []} />
       ) : (
         <BrowseView
           tree={tree}
@@ -297,20 +319,17 @@ function BrowseView({
   );
 }
 
-function SearchResults({ term }: { term: string }) {
-  const results = useQuery(api.bookmarks.search, { query: term });
-  const risks = useSiteRisks((results ?? []).map((row) => row.domain));
+function SearchResults({
+  results,
+}: {
+  results: FunctionReturnType<typeof api.bookmarks.search>;
+}) {
+  const risks = useSiteRisks(results.map((row) => row.domain));
   const [openRisk, setOpenRisk] = useState<string | null>(null);
 
   return (
     <div className="flex-1 overflow-y-auto p-2">
-      {results === undefined && (
-        <p className="px-2 text-neutral-500 dark:text-neutral-400">Searching…</p>
-      )}
-      {results !== undefined && results.length === 0 && (
-        <p className="px-2 text-neutral-500 dark:text-neutral-400">No results for “{term}”.</p>
-      )}
-      {(results ?? []).map((row) => (
+      {results.map((row) => (
         <BookmarkRow
           key={row._id}
           row={row}

@@ -10,7 +10,7 @@ import {
 } from "react";
 import type { Doc } from "@convex/dataModel";
 import { browser } from "wxt/browser";
-import { ArrowLeft, BookOpen, ExternalLink, PencilLine } from "lucide-react";
+import { ArrowLeft, BookOpen, ExternalLink, PencilLine, Square, SquareCheck } from "lucide-react";
 import { CollectionGlyph } from "@/components/collection-glyph";
 import { NOTE_READER_TAGS, safeNoteHref } from "@/utils/collection-note-html";
 
@@ -309,13 +309,15 @@ function noteNode(node: ChildNode, key: number): ReactNode {
   }
   if (tag === "br" || tag === "hr") return createElement(tag, { key });
   if (tag === "input") {
+    // A mark, not a disabled control: nothing here can be ticked.
+    const done = element.hasAttribute("checked");
+    const Mark = done ? SquareCheck : Square;
     return (
-      <input
+      <Mark
         key={key}
-        type="checkbox"
-        disabled
-        checked={element.hasAttribute("checked")}
-        aria-label={element.closest("li")?.textContent?.trim()}
+        role="img"
+        aria-label={`${done ? "Done" : "To do"}: ${element.closest("li")?.textContent?.trim()}`}
+        className="h-4 w-4"
       />
     );
   }

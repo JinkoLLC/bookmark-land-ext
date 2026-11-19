@@ -52,6 +52,10 @@ export interface ImportModel {
   mergedInto: Record<string, string>;
 }
 
+/** No folder becomes a collection: every one merges into the destination itself. */
+export const allFoldersMerge = (model: ImportModel) =>
+  model.folders.length === 0 && model.mergedFolderIds.length > 0;
+
 const MAX_DEPTH = 5; // collections may nest 5 levels: depths 0..4
 
 /**

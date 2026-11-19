@@ -1,10 +1,6 @@
 import type { ReactNode } from "react";
 import { pageFeedNote, type CollectionOption } from "@/utils/organize";
-import {
-  collectionWithPath,
-  importedCollectionName,
-  type ImportDestination,
-} from "@/utils/import-destination";
+import { collectionWithPath, type ImportDestination } from "@/utils/import-destination";
 
 /**
  * Destination choice for the Browser import: a new collection named after
@@ -14,12 +10,15 @@ import {
 export function DestinationPicker({
   value,
   onChange,
+  importedName,
   options,
   onPage,
   loading = false,
   disabled = false,
 }: {
   value: ImportDestination;
+  /** The default destination's name: the one the import will create. */
+  importedName: string;
   onChange: (next: ImportDestination) => void;
   options: CollectionOption[];
   /** How many live pages show each collection: an import into one is public there. */
@@ -33,7 +32,7 @@ export function DestinationPicker({
       <legend className="sr-only">Import into</legend>
       <div className="flex flex-col gap-2">
         <Choice
-          label={`A new collection for this import, “${importedCollectionName(new Date())}”`}
+          label={`A new collection for this import, “${importedName}”`}
           checked={value.kind === "imported"}
           onSelect={() => onChange({ kind: "imported" })}
         />

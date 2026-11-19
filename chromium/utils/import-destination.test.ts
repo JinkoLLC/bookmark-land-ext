@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   destinationArgFor,
   destinationBaseDepth,
+  destinationName,
   importedCollectionName,
   collectionWithPath,
 } from "./import-destination";
@@ -9,6 +10,7 @@ import {
 const depths: Record<string, number> = { top: 0, nested: 2, deepest: 4 };
 const depthOf = (id: string) => depths[id];
 const NOW = new Date(2026, 10, 1, 15, 42);
+const NAME = importedCollectionName(NOW);
 
 describe("importedCollectionName", () => {
   it("names the default destination after the moment of the import", () => {
@@ -36,23 +38,39 @@ describe("destinationBaseDepth", () => {
 
 describe("destinationArgFor", () => {
   it("maps the complete choices to action arguments", () => {
-    expect(destinationArgFor({ kind: "imported" }, NOW)).toEqual({
+    // The name it is given, not one made at the moment of the call.
+    expect(destinationArgFor({ kind: "imported" }, NAME)).toEqual({
       type: "create",
-      name: importedCollectionName(NOW),
+      name: NAME,
     });
-    expect(destinationArgFor({ kind: "new", name: "  My Import " })).toEqual({
+    expect(destinationArgFor({ kind: "new", name: "  My Import " }, NAME)).toEqual({
       type: "create",
       name: "My Import",
     });
-    expect(destinationArgFor({ kind: "existing", id: "top" })).toEqual({
+    expect(destinationArgFor({ kind: "existing", id: "top" }, NAME)).toEqual({
       type: "collection",
       id: "top",
     });
   });
 
   it("returns null while the choice is incomplete", () => {
-    expect(destinationArgFor({ kind: "new", name: "   " })).toBeNull();
-    expect(destinationArgFor({ kind: "existing" })).toBeNull();
+    expect(destinationArgFor({ kind: "new", name: "   " }, NAME)).toBeNull();
+    expect(destinationArgFor({ kind: "existing" }, NAME)).toBeNull();
+  });
+});
+
+describe("destinationName", () => {
+  const options = [{ id: "top", name: "Research", depth: 0 }];
+
+  it("is the name the import submits", () => {
+    expect(destinationName({ kind: "imported" }, NAME, options)).toBe(NAME);
+    expect(destinationName({ kind: "new", name: " My Import " }, NAME, options)).toBe("My Import");
+    expect(destinationName({ kind: "existing", id: "top" }, NAME, options)).toBe("Research");
+  });
+
+  it("has a stand-in while the choice is incomplete", () => {
+    expect(destinationName({ kind: "new", name: " " }, NAME, options)).toBe("the new collection");
+    expect(destinationName({ kind: "existing" }, NAME, options)).toBe("the collection you choose");
   });
 });
 
