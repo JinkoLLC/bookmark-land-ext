@@ -31,6 +31,9 @@ const MUTED = "text-neutral-500 dark:text-neutral-400";
 const OUTLINE_BUTTON = `rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800 ${RING}`;
 /** A control's label quoted in running text. */
 const LABEL = "font-medium text-neutral-700 dark:text-neutral-300";
+/** Set in browser.storage.local once the full privacy text has been shown. */
+const PRIVACY_SEEN_KEY = "bookmark-land:privacy-seen";
+const PRIVACY_SEEN_AFTER_MS = 1_000;
 const HEADER =
   "flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200 px-3 dark:border-neutral-800";
 
@@ -380,10 +383,31 @@ function PrivacyNote({
   compact: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // The full text is for the first visit: once it has been shown, every state
+  // gets the summary. undefined = not read yet, which shows the full text.
+  // Read once, so the text never shrinks under the reader on the visit that records it.
+  const [seen, setSeen] = useState<boolean | undefined>(undefined);
+  useEffect(() => {
+    void browser.storage.local.get(PRIVACY_SEEN_KEY).then(
+      (items: Record<string, unknown>) => setSeen(items[PRIVACY_SEEN_KEY] === true),
+      () => setSeen(false),
+    );
+  }, []);
+  const summary = compact || seen === true;
+  const full = !summary || open;
+  useEffect(() => {
+    if (!full || seen !== false) return;
+    // Shown, not flashed: a saved page has the full text only until its check answers.
+    const timer = setTimeout(
+      () => void browser.storage.local.set({ [PRIVACY_SEEN_KEY]: true }).catch(() => {}),
+      PRIVACY_SEEN_AFTER_MS,
+    );
+    return () => clearTimeout(timer);
+  }, [full, seen]);
   const link = `rounded underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300 ${RING}`;
   return (
     <p className={`text-xs ${MUTED}`}>
-      {compact && !open ? (
+      {!full ? (
         <>While signed in, the page you&apos;re viewing is checked against your library and Site security.</>
       ) : (
         <>
@@ -394,7 +418,7 @@ function PrivacyNote({
           {shortLinks && " Creating a short link stores this address with it."}
         </>
       )}{" "}
-      {compact && (
+      {summary && (
         <>
           <button
             type="button"
@@ -594,7 +618,8 @@ function AccountMenu({ email }: { email?: string }) {
               disabled={signingOut}
               className={item}
             >
-              <LogOut className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
+              {/* On the label's first line, as the other items' icons are on theirs. */}
+              <LogOut className="mt-0.5 h-4 w-4 shrink-0 self-start text-red-600 dark:text-red-400" aria-hidden="true" />
               <span>
                 {signingOut ? "Signing out…" : "Sign out"}
                 {/* Keeps the two lines apart in the button's name. */}

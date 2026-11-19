@@ -267,7 +267,8 @@ function CollectionPicker({
             }}
             onKeyDown={onFieldKey}
             placeholder="Filter collections"
-            className={`shrink-0 rounded-md bg-transparent px-2 py-1.5 placeholder:text-neutral-500 dark:placeholder:text-neutral-400 ${RING}`}
+            // The ring is drawn inside: outside it would stick out past the panel's border and over the row below.
+            className="shrink-0 rounded-md bg-transparent px-2 py-1.5 placeholder:text-neutral-500 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring dark:placeholder:text-neutral-400"
           />
           {live.state === "loading" && (
             <p role="status" className={`shrink-0 border-t border-neutral-200 px-2 py-1 text-xs dark:border-neutral-800 ${MUTED}`}>
@@ -330,7 +331,8 @@ function CollectionPicker({
                 <CollectionGlyph icon={row.icon} color={row.color} className="mt-[3px] h-3.5 w-3.5" />
                 <span className="min-w-0 flex-1">
                   <span className="flex gap-1">
-                    <span className={`truncate ${row.id === selected.id ? "font-medium" : ""}`}>{row.name}</span>
+                    {/* Two lines for the name itself, so it isn't cut while its path below wraps. */}
+                    <span className={`line-clamp-2 min-w-0 break-words ${row.id === selected.id ? "font-medium" : ""}`}>{row.name}</span>
                     {onPage(row) && <span className="shrink-0 text-neutral-600 dark:text-neutral-400"> · on a page</span>}
                   </span>
                   {/* Wraps: same-named collections differ at the end of their path. */}

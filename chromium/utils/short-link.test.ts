@@ -85,9 +85,11 @@ describe("allowanceLine", () => {
   });
 
   it("leads with the kept count on plans that cap it", () => {
-    expect(allowanceLine(EDU, true)).toBe("24 of 25 short links in use · 10 left this month");
+    expect(allowanceLine(EDU, true)).toBe("24 of 25 kept at once · 10 new left this month");
+    // On Free both limits are 25: each number says which one it is.
+    expect(allowanceLine({ ...EDU, tier: "free", held: 25, created: 25 })).toBe("25 of 25 kept at once · 0 new left this month");
     // The server counts held up to one past the cap.
-    expect(allowanceLine({ ...EDU, held: 26 })).toBe("25 of 25 short links in use · 10 left this month");
+    expect(allowanceLine({ ...EDU, held: 26 })).toBe("25 of 25 kept at once · 10 new left this month");
   });
 });
 
@@ -206,7 +208,7 @@ describe("deriveShortLinkView", () => {
 
   it("shows the page's short link with its state", () => {
     const view = (row: ShortLinkRow) => deriveShortLinkView({ ...base, list: { links: [row], truncated: false } });
-    expect(view(link())).toEqual({ kind: "link", shortUrl: "https://bkmk.to/k7m2qx", targetUrl: PAGE, state: "active", outcome: "existing" });
+    expect(view(link())).toEqual({ kind: "link", shortUrl: "https://bkmk.to/k7m2qx", targetUrl: PAGE, state: "active", outcome: "existing", copied: false });
     expect(view(link({ userPaused: true }))).toMatchObject({ state: "paused" });
     expect(view(link({ lapsePaused: true }))).toMatchObject({ state: "paused" });
     expect(view(link({ status: "blocked", userPaused: true }))).toMatchObject({ state: "blocked" });
@@ -221,21 +223,34 @@ describe("deriveShortLinkView", () => {
       shortUrl: "https://bkmk.to/n3w",
       targetUrl: PAGE,
       state: "active",
-      outcome: "created-copied",
+      outcome: "created",
+      copied: true,
     });
-    expect(deriveShortLinkView({ ...base, creation: { ...created, copied: false } })).toMatchObject({ outcome: "created" });
+    // The short link shows as created before the clipboard answers, and when it refuses.
+    expect(deriveShortLinkView({ ...base, creation: { ...created, copied: null } })).toMatchObject({ outcome: "created", copied: false });
+    expect(deriveShortLinkView({ ...base, creation: { ...created, copied: false } })).toMatchObject({ outcome: "created", copied: false });
     expect(deriveShortLinkView({ ...base, creation: { status: "refused", sentence: "No." } })).toEqual({ kind: "refused", sentence: "No." });
     expect(deriveShortLinkView({ ...base, creation: { status: "failed" } })).toEqual({ ...create, failed: true });
   });
 
   it("never offers a plain Create while an unfinished creation is on record", () => {
-    const unfinished = { kind: "unfinished", at: 5, checking: false, limit: false, wait: null };
+    const unfinished = { kind: "unfinished", at: 5, checking: false, limit: false, wait: null, failed: false };
     expect(deriveShortLinkView({ ...base, record: 5 })).toEqual(unfinished);
     expect(deriveShortLinkView({ ...base, record: 5, list: undefined })).toEqual({ ...unfinished, checking: true });
     // A match that arrives late replaces it.
     expect(deriveShortLinkView({ ...base, record: 5, list: { links: [link()], truncated: false } })).toMatchObject({ kind: "link", outcome: "existing" });
     // "Create and copy anyway" is a creation like any other.
     expect(deriveShortLinkView({ ...base, record: 5, creation: { status: "creating", slow: false } })).toMatchObject({ kind: "create", wait: "creating" });
+  });
+
+  it("keeps the first attempt unresolved when a second one fails", () => {
+    const failed = { ...base, record: 5, creation: { status: "failed" } as const };
+    // Never an ordinary Create saying nothing was used: the first attempt may have been.
+    expect(deriveShortLinkView(failed)).toEqual({ kind: "unfinished", at: 5, checking: false, limit: false, wait: null, failed: true });
+    expect(deriveShortLinkView({ ...failed, list: undefined })).toMatchObject({ kind: "unfinished", checking: true, failed: true });
+    // Until the first outcome is known (a match appears) or a second attempt succeeds.
+    expect(deriveShortLinkView({ ...failed, list: { links: [link()], truncated: false } })).toMatchObject({ kind: "link", outcome: "existing" });
+    expect(deriveShortLinkView({ ...failed, creation: { status: "created", shortUrl: "https://bkmk.to/n3w", copied: null } })).toMatchObject({ kind: "link", outcome: "created" });
   });
 
   it("holds Create and copy anyway to the checks of an ordinary Create", () => {

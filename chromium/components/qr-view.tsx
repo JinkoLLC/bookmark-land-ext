@@ -162,13 +162,12 @@ export function QrExports({
     };
   }, [svg]);
 
-  const ready = png instanceof Blob ? png : null;
+  /** The PNG, drawn now if a click comes before the one above is ready. */
+  const drawn = () => (png instanceof Blob ? Promise.resolve(png) : qrPng(svg));
   const copyImage = () => {
     if (png === "failed") return;
     setCopy("idle");
-    void copyWhenReady("image/png", ready ? Promise.resolve(ready) : qrPng(svg)).then((ok) =>
-      setCopy(ok ? "copied" : "failed"),
-    );
+    void copyWhenReady("image/png", drawn()).then((ok) => setCopy(ok ? "copied" : "failed"));
   };
   const height = stacked ? "py-1.5" : "py-2";
 
@@ -185,8 +184,9 @@ export function QrExports({
       <div className={`flex gap-2 ${stacked ? "flex-col" : ""}`}>
         <button
           type="button"
-          aria-disabled={!ready}
-          onClick={() => ready && download(ready, `${fileName}.png`)}
+          aria-disabled={png === "failed"}
+          // A failure here is the same one the drawing above reports.
+          onClick={() => png !== "failed" && void drawn().then((blob) => download(blob, `${fileName}.png`), () => {})}
           className={`flex-1 ${OUTLINE} ${height}`}
         >
           Download PNG
@@ -271,7 +271,7 @@ export function QrView({
                   {shortLink() ? <>, or {shortLink("use a short link")}.</> : "."}
                 </p>
               )}
-              <PageAddress text={url} id="qr-address" />
+              <PageAddress text={url} id="qr-address" className={MUTED} />
               <QrExports svg={svg} fileName={`qr-${extractDomain(url)}`} />
               <p className={`text-xs ${MUTED}`}>
                 Made in your browser. It isn&apos;t tracked and can&apos;t be changed after printing.

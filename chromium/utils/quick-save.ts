@@ -105,5 +105,5 @@ export function stateFromError(error: unknown): QuickSaveState {
 export function limitSentence(limit?: number): string {
   return limit === undefined
     ? "You've reached your plan's bookmark limit."
-    : `You've reached your plan's limit of ${limit.toLocaleString("en-US")} bookmarks.`;
+    : `You've reached your plan's limit of ${limit.toLocaleString()} bookmarks.`;
 }

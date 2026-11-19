@@ -85,13 +85,13 @@ export const shortLinkText = (shortUrl: string) => shortUrl.replace(/^https?:\/\
 /** What a tracked QR code encodes: the redirect counts `?qr` as a scan. */
 export const trackedQrAddress = (shortUrl: string) => `${shortUrl}?qr`;
 
-const count = (n: number) => n.toLocaleString("en-US");
+const count = (n: number) => n.toLocaleString();
 
-/** "38 of 50 left this month · Pro plan"; on plans that cap the kept short links, "12 of 25 short links in use · 13 left this month". */
+/** "38 of 50 left this month · Pro plan"; on plans that cap the kept short links, "12 of 25 kept at once · 13 new left this month" (both limits can be the same number, so each is named). */
 export function allowanceLine(usage: ShortLinkUsage, withPlan = false): string {
   const left = count(Math.max(0, usage.monthly - usage.created));
   if (usage.liveCap !== undefined) {
-    return `${count(Math.min(usage.held ?? 0, usage.liveCap))} of ${count(usage.liveCap)} short links in use · ${left} left this month`;
+    return `${count(Math.min(usage.held ?? 0, usage.liveCap))} of ${count(usage.liveCap)} kept at once · ${left} new left this month`;
   }
   return `${left} of ${count(usage.monthly)} left this month${withPlan ? ` · ${TIER_LABEL[usage.tier]} plan` : ""}`;
 }
@@ -152,7 +152,8 @@ export function unfinishedSentence(at: number, now: number, locale?: string): st
 /** One creation request, kept in the popup's root so leaving the view doesn't lose it. */
 export type ShortLinkCreation =
   | { status: "creating"; slow: boolean }
-  | { status: "created"; shortUrl: string; copied: boolean }
+  /** `copied`: whether the click's clipboard write worked; null until the clipboard answers. */
+  | { status: "created"; shortUrl: string; copied: boolean | null }
   /** The server refused the address; its sentence. Nothing was used. */
   | { status: "refused"; sentence: string }
   /** Any other failure; nothing was created, so Create is offered again. */
@@ -174,14 +175,18 @@ export type ShortLinkView =
       shortUrl: string;
       targetUrl: string;
       state: ShortLinkState;
-      outcome: "created-copied" | "created" | "existing";
+      outcome: "created" | "existing";
+      /** The creation put the short link on the clipboard. */
+      copied: boolean;
     }
   /**
    * A creation was started and the popup closed before its answer. "Create
    * and copy anyway" passes the checks of an ordinary Create: none is
    * offered at a reached `limit`, and it waits for Quick save (`wait`).
+   * `failed`: a second attempt failed, which leaves the first one's outcome
+   * as unknown as before.
    */
-  | { kind: "unfinished"; at: number; checking: boolean; limit: boolean; wait: null | "page" }
+  | { kind: "unfinished"; at: number; checking: boolean; limit: boolean; wait: null | "page"; failed: boolean }
   /** The month's allowance or the kept-at-once cap is reached. */
   | { kind: "limit" }
   | {
@@ -223,7 +228,8 @@ export function deriveShortLinkView(input: {
       shortUrl: creation.shortUrl,
       targetUrl: address,
       state: "active",
-      outcome: creation.copied ? "created-copied" : "created",
+      outcome: "created",
+      copied: creation.copied === true,
     };
   }
   if (usage && !(usage instanceof Error) && !usage.available) return { kind: "unavailable" };
@@ -234,20 +240,21 @@ export function deriveShortLinkView(input: {
   if (usage instanceof Error || list instanceof Error || input.accountId === null) return { kind: "failed" };
   const wait = input.bookmarkId === undefined ? "page" : null;
   // With a record, the view never falls back to a plain Create while the list loads.
-  if (record != null && list === undefined) return { kind: "unfinished", at: record, checking: true, limit: false, wait };
+  const failed = creation?.status === "failed";
+  if (record != null && list === undefined) return { kind: "unfinished", at: record, checking: true, limit: false, wait, failed };
   if (usage === undefined || list === undefined || record === undefined) return { ...create, wait: "allowance" };
 
   const match = findShortLink(list.links, address);
   if (match) {
-    return { kind: "link", shortUrl: match.shortUrl, targetUrl: match.targetUrl, state: shortLinkState(match), outcome: "existing" };
+    return { kind: "link", shortUrl: match.shortUrl, targetUrl: match.targetUrl, state: shortLinkState(match), outcome: "existing", copied: false };
   }
   const limit = limitReached(usage) !== null;
-  if (record !== null) return { kind: "unfinished", at: record, checking: false, limit, wait };
+  if (record !== null) return { kind: "unfinished", at: record, checking: false, limit, wait, failed };
   if (limit) return { kind: "limit" };
   return {
     ...create,
     wait,
     truncated: list.truncated,
-    failed: creation?.status === "failed",
+    failed,
   };
 }
