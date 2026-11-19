@@ -15,6 +15,7 @@ import {
   type PickerRow,
 } from "@/utils/organize";
 import { moveIndex } from "@/utils/list-keys";
+import { MORE_BELOW, useScrollMore } from "@/hooks/use-scroll-more";
 import { CollectionGlyph } from "@/components/collection-glyph";
 import { StatusLine } from "@/components/status-line";
 
@@ -133,6 +134,7 @@ function CollectionPicker({
   const pressing = useRef(false);
   const field = useRef<HTMLInputElement>(null);
   const listId = useId();
+  const list = useScrollMore();
 
   const all = pickerRows(collections ?? []);
   const rows = filterPickerRows(all, filter);
@@ -288,52 +290,55 @@ function CollectionPicker({
               </button>
             </div>
           )}
-          {rows.length === 0 ? (
-            <p id={listId} role="status" className={`border-t border-neutral-200 px-2 py-1.5 dark:border-neutral-800 ${MUTED}`}>
-              No collections match &quot;{filter.trim()}&quot;
-            </p>
-          ) : (
-            <div
-              id={listId}
-              role="listbox"
-              aria-label="Collections"
-              // Focus stays in the filter field; without this Chrome makes the scrolling list a Tab stop.
-              tabIndex={-1}
-              // Keeps focus in the filter field when a row is clicked.
-              onMouseDown={(event) => event.preventDefault()}
-              className="min-h-0 overflow-y-auto border-t border-neutral-200 p-1 dark:border-neutral-800"
-            >
-              {rows.map((row, i) => (
-                <div
-                  key={row.id ?? ""}
-                  id={`${listId}-${i}`}
-                  role="option"
-                  aria-selected={row.id === selected.id}
-                  aria-disabled={!canChoose(row)}
-                  onClick={() => {
-                    if (canChoose(row)) void choose(row);
-                  }}
-                  className={`flex items-center gap-2 rounded px-2 py-1 ${
-                    canChoose(row) ? "cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800" : "opacity-60"
-                  } ${
-                    // A fill and a bar at the leading edge; the ring belongs to the filter field.
-                    i === active ? "bg-neutral-100 shadow-[inset_3px_0_0_var(--ring)] dark:bg-neutral-800" : ""
-                  }`}
-                >
-                  <CollectionGlyph icon={row.icon} color={row.color} className="h-3.5 w-3.5" />
-                  <span className="min-w-0 flex-1">
-                    <span className="flex gap-1">
-                      <span className={`truncate ${row.id === selected.id ? "font-medium" : ""}`}>{row.name}</span>
-                      {onPage(row) && <span className="shrink-0 text-neutral-600 dark:text-neutral-400"> · on a page</span>}
-                    </span>
-                    {/* Wraps: same-named collections differ at the end of their path. */}
-                    {row.path && <span className="block break-words text-xs text-neutral-600 dark:text-neutral-400"> {row.path}</span>}
+          {/* Always here, so an empty result is announced as a change to it. */}
+          <p
+            role="status"
+            className={rows.length === 0 ? `border-t border-neutral-200 px-2 py-1.5 dark:border-neutral-800 ${MUTED}` : "sr-only"}
+          >
+            {rows.length === 0 && <>No collections match &quot;{filter.trim()}&quot;</>}
+          </p>
+          {/* Stays mounted when nothing matches: the field's aria-controls points at it. */}
+          <div
+            ref={list.ref}
+            id={listId}
+            role="listbox"
+            aria-label="Collections"
+            // Focus stays in the filter field; without this Chrome makes the scrolling list a Tab stop.
+            tabIndex={-1}
+            // Keeps focus in the filter field when a row is clicked.
+            onMouseDown={(event) => event.preventDefault()}
+            className={`min-h-0 overflow-y-auto ${rows.length === 0 ? "" : "border-t border-neutral-200 p-1 dark:border-neutral-800"} ${list.more ? MORE_BELOW : ""}`}
+          >
+            {rows.map((row, i) => (
+              <div
+                key={row.id ?? ""}
+                id={`${listId}-${i}`}
+                role="option"
+                aria-selected={row.id === selected.id}
+                aria-disabled={!canChoose(row)}
+                onClick={() => {
+                  if (canChoose(row)) void choose(row);
+                }}
+                className={`flex items-center gap-2 rounded px-2 py-1 ${
+                  canChoose(row) ? "cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800" : "opacity-60"
+                } ${
+                  // A fill and a bar at the leading edge; the ring belongs to the filter field.
+                  i === active ? "bg-neutral-100 shadow-[inset_3px_0_0_var(--ring)] dark:bg-neutral-800" : ""
+                }`}
+              >
+                <CollectionGlyph icon={row.icon} color={row.color} className="h-3.5 w-3.5" />
+                <span className="min-w-0 flex-1">
+                  <span className="flex gap-1">
+                    <span className={`truncate ${row.id === selected.id ? "font-medium" : ""}`}>{row.name}</span>
+                    {onPage(row) && <span className="shrink-0 text-neutral-600 dark:text-neutral-400"> · on a page</span>}
                   </span>
-                  {row.id === selected.id && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
-                </div>
-              ))}
-            </div>
-          )}
+                  {/* Wraps: same-named collections differ at the end of their path. */}
+                  {row.path && <span className="block break-words text-xs text-neutral-600 dark:text-neutral-400"> {row.path}</span>}
+                </span>
+                {row.id === selected.id && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </>

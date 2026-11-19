@@ -85,9 +85,9 @@ describe("allowanceLine", () => {
   });
 
   it("leads with the kept count on plans that cap it", () => {
-    expect(allowanceLine(EDU, true)).toBe("24 of 25 kept · 10 left this month");
+    expect(allowanceLine(EDU, true)).toBe("24 of 25 short links in use · 10 left this month");
     // The server counts held up to one past the cap.
-    expect(allowanceLine({ ...EDU, held: 26 })).toBe("25 of 25 kept · 10 left this month");
+    expect(allowanceLine({ ...EDU, held: 26 })).toBe("25 of 25 short links in use · 10 left this month");
   });
 });
 
@@ -122,10 +122,10 @@ describe("limitReached", () => {
 });
 
 describe("the unfinished-create record", () => {
-  it("is keyed by account and address, so it never applies to another account or page", () => {
-    const key = createRecordKey("alex@example.com", PAGE);
-    expect(key).not.toBe(createRecordKey("sam@example.com", PAGE));
-    expect(key).not.toBe(createRecordKey("alex@example.com", `${PAGE}#top`));
+  it("is keyed by account id and address, so it never applies to another account or page", () => {
+    const key = createRecordKey("user_alex", PAGE);
+    expect(key).not.toBe(createRecordKey("user_sam", PAGE));
+    expect(key).not.toBe(createRecordKey("user_alex", `${PAGE}#top`));
   });
 
   it("reads back only a well-formed record", () => {
@@ -159,6 +159,7 @@ describe("deriveShortLinkView", () => {
     address: PAGE,
     usage: PRO,
     list: { links: [] as ShortLinkRow[], truncated: false },
+    accountId: "user_alex",
     bookmarkId: null,
     creation: null,
     record: null,
@@ -181,6 +182,12 @@ describe("deriveShortLinkView", () => {
   it("reports a failed load", () => {
     expect(deriveShortLinkView({ ...base, list: new Error("x") })).toEqual({ kind: "failed" });
     expect(deriveShortLinkView({ ...base, usage: new Error("x") })).toEqual({ kind: "failed" });
+  });
+
+  it("offers no Create without the account id: it waits for it, and fails when the worker can't say", () => {
+    // The record can't be read before the id is known.
+    expect(deriveShortLinkView({ ...base, accountId: undefined, record: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
+    expect(deriveShortLinkView({ ...base, accountId: null, record: undefined })).toEqual({ kind: "failed" });
   });
 
   it("closes the view when short links aren't open to the account, even mid-creation", () => {
@@ -221,12 +228,20 @@ describe("deriveShortLinkView", () => {
   });
 
   it("never offers a plain Create while an unfinished creation is on record", () => {
-    expect(deriveShortLinkView({ ...base, record: 5 })).toEqual({ kind: "unfinished", at: 5, checking: false });
-    expect(deriveShortLinkView({ ...base, record: 5, list: undefined })).toEqual({ kind: "unfinished", at: 5, checking: true });
+    const unfinished = { kind: "unfinished", at: 5, checking: false, limit: false, wait: null };
+    expect(deriveShortLinkView({ ...base, record: 5 })).toEqual(unfinished);
+    expect(deriveShortLinkView({ ...base, record: 5, list: undefined })).toEqual({ ...unfinished, checking: true });
     // A match that arrives late replaces it.
     expect(deriveShortLinkView({ ...base, record: 5, list: { links: [link()], truncated: false } })).toMatchObject({ kind: "link", outcome: "existing" });
     // "Create short link anyway" is a creation like any other.
     expect(deriveShortLinkView({ ...base, record: 5, creation: { status: "creating", slow: false } })).toMatchObject({ kind: "create", wait: "creating" });
+  });
+
+  it("holds Create short link anyway to the checks of an ordinary Create", () => {
+    // No allowance left: no Create at all. Quick save still checking or saving: it waits.
+    expect(deriveShortLinkView({ ...base, record: 5, usage: { ...PRO, created: 50 } })).toMatchObject({ kind: "unfinished", limit: true });
+    expect(deriveShortLinkView({ ...base, record: 5, usage: { ...EDU, held: 25 } })).toMatchObject({ kind: "unfinished", limit: true });
+    expect(deriveShortLinkView({ ...base, record: 5, bookmarkId: undefined })).toMatchObject({ kind: "unfinished", limit: false, wait: "page" });
   });
 
   it("stops at a reached limit, but still shows an existing short link", () => {

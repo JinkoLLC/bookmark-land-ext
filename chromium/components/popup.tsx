@@ -1,17 +1,17 @@
-import { useEffect, useRef, useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth, useUser } from "@clerk/chrome-extension";
 import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/api";
-import type { FunctionReturnType } from "convex/server";
 import { browser } from "wxt/browser";
 import { ExternalLink, LogOut, PanelRight, Settings, User } from "lucide-react";
 import { FeedbackForm } from "@/components/feedback-form";
 import { QrView } from "@/components/qr-view";
 import { ShortLinkView, useShortLink, type PageTab } from "@/components/short-link-view";
 import {
-  getAccountEmailFromBackground,
+  getAccountFromBackground,
   signOutFromBackground,
 } from "@/utils/auth-token";
+import { MORE_BELOW, useScrollMore } from "@/hooks/use-scroll-more";
 import { useStalled } from "@/hooks/use-stalled";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { moveIndex } from "@/utils/list-keys";
@@ -29,6 +29,8 @@ const RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const MUTED = "text-neutral-500 dark:text-neutral-400";
 const OUTLINE_BUTTON = `rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800 ${RING}`;
+/** A control's label quoted in running text. */
+const LABEL = "font-medium text-neutral-700 dark:text-neutral-300";
 const HEADER =
   "flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200 px-3 dark:border-neutral-800";
 
@@ -223,15 +225,18 @@ function SignedOutView() {
       <div className={views.top ? "hidden" : "contents"}>
         <PlainView>
           <p>Sign in to bookmark.land to start saving pages.</p>
-          <ul className={`list-disc space-y-1 pl-4 ${MUTED}`}>
-            <li>Open bookmark.land from the browser toolbar, then choose <span className="font-medium text-neutral-700 dark:text-neutral-300">Save to bookmark.land</span>.</li>
+          <p id="signed-in-list" className={MUTED}>
+            Once you&apos;re signed in:
+          </p>
+          <ul aria-labelledby="signed-in-list" className={`-mt-2 list-disc space-y-1 pl-4 ${MUTED}`}>
+            <li>Open bookmark.land from the browser toolbar, then choose <span className={LABEL}>Save to bookmark.land</span>.</li>
             {shortcut && (
               <li>
                 Press <kbd className="rounded border border-neutral-300 px-1 font-mono text-xs dark:border-neutral-700">{shortcut}</kbd> to save instantly.
               </li>
             )}
             {/* The menu labels registered in entrypoints/background.ts. */}
-            <li>Right-click a page and choose Save to bookmark.land, or a link and choose Save link to bookmark.land.</li>
+            <li>Right-click a page and choose <span className={LABEL}>Save to bookmark.land</span>, or a link and choose <span className={LABEL}>Save link to bookmark.land</span>.</li>
           </ul>
           <button
             type="button"
@@ -242,30 +247,25 @@ function SignedOutView() {
           </button>
           {/* A QR code is made in the browser, so it needs no account. */}
           {tab && (
-            <button id="qr-code-button" type="button" onClick={() => views.open("qr")} className={OUTLINE_BUTTON}>
-              QR code
-            </button>
+            <>
+              <button
+                id="qr-code-button"
+                type="button"
+                aria-describedby="qr-code-note"
+                onClick={() => views.open("qr")}
+                className={OUTLINE_BUTTON}
+              >
+                QR code
+              </button>
+              <p id="qr-code-note" className={`-mt-2 text-xs ${MUTED}`}>
+                For this page. No account needed.
+              </p>
+            </>
           )}
         </PlainView>
       </div>
     </>
   );
-}
-
-/** True while the element's content is taller than its box. */
-function useOverflows(ref: RefObject<HTMLElement | null>): boolean {
-  const [overflows, setOverflows] = useState(false);
-  useEffect(() => {
-    const element = ref.current;
-    if (!element) return;
-    const check = () => setOverflows(element.scrollHeight > element.clientHeight);
-    const observer = new ResizeObserver(check);
-    observer.observe(element);
-    // The content's own box: it grows without the scroller's box changing.
-    if (element.firstElementChild) observer.observe(element.firstElementChild);
-    return () => observer.disconnect();
-  }, [ref]);
-  return overflows;
 }
 
 function SignedInView() {
@@ -275,21 +275,13 @@ function SignedInView() {
   // Which Bookmark the page is, as Quick save finds or makes it: a short link
   // created here is attached to it.
   const [bookmarkId, setBookmarkId] = useState<string | null | undefined>(undefined);
-  const shortLink = useShortLink(tab, email, bookmarkId);
+  const shortLink = useShortLink(tab, bookmarkId);
   const openShortLink = () => {
     shortLink.load();
     views.open("short");
   };
 
-  // Session summary — the authenticated read model for account limits and
-  // bookmark counts. Live, so a Quick save bumps the count in place.
-  const summary = useQuery(api.subscriptions.getSubscriptionInfo, {});
-  useEffect(() => {
-    if (summary === null) console.error("[extension] Subscription summary query returned no data");
-  }, [summary]);
-
-  const middle = useRef<HTMLElement>(null);
-  const scrolls = useOverflows(middle);
+  const middle = useScrollMore();
   const link = `flex h-6 items-center underline underline-offset-2 hover:text-neutral-950 dark:hover:text-white rounded ${RING}`;
 
   return (
@@ -311,12 +303,12 @@ function SignedInView() {
       <div className={views.top ? "hidden" : "contents"}>
         <PopupHeader email={email ?? undefined} />
         <main
-          ref={middle}
+          ref={middle.ref}
           aria-label="This page"
           // A stop of its own only when there is something to scroll. The scroll
           // padding keeps a focused control's ring clear of the region's edge.
-          tabIndex={scrolls ? 0 : undefined}
-          className="min-h-0 flex-1 scroll-py-2 overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+          tabIndex={middle.overflows ? 0 : undefined}
+          className={`min-h-0 flex-1 scroll-py-2 overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${middle.more ? MORE_BELOW : ""}`}
         >
           <div className="flex flex-col gap-2 p-3">
             <PendingErrorBanner />
@@ -339,23 +331,11 @@ function SignedInView() {
                 </button>
               </div>
             )}
-            <PrivacyNote />
+            <PrivacyNote shortLinks={Boolean(tab) && shortLink.open} />
           </div>
         </main>
         <footer className="flex shrink-0 flex-col border-t border-neutral-200 px-3 pb-2 pt-[7px] text-xs text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
-          {summary === null ? (
-            // Only the plan summary failed; the page's own state above stands.
-            <div className="flex items-center gap-2">
-              <StatusLine tone="error" role="alert" className="min-w-0 flex-1">
-                Couldn&apos;t load your plan and bookmark count.
-              </StatusLine>
-              <button type="button" onClick={() => window.location.reload()} className={`shrink-0 font-medium ${link}`}>
-                Retry
-              </button>
-            </div>
-          ) : (
-            <PlanLine summary={summary} />
-          )}
+          <PlanSummary retryClassName={`shrink-0 font-medium ${link}`} />
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -390,14 +370,14 @@ function SignedInView() {
  * in the UI, not only on the listing. Last block of the scrolling region:
  * always reachable, never taking fixed space.
  */
-function PrivacyNote() {
+function PrivacyNote({ shortLinks }: { /** The Short link button is offered. */ shortLinks: boolean }) {
   return (
     <p className={`text-xs ${MUTED}`}>
       While signed in, the address of the page you&apos;re viewing is checked
       against your library to show the saved badge, and its site against
       bookmark.land&apos;s Site security results when you open this popup.
-      Nothing is added to your library unless you save the page. Creating a
-      short link stores this address with it.{" "}
+      Nothing is added to your library unless you save the page.
+      {shortLinks && " Creating a short link stores this address with it."}{" "}
       <a
         href={`${import.meta.env.WXT_WEB_APP_URL}/extension/privacy`}
         target="_blank"
@@ -470,8 +450,8 @@ function useAccountEmail(): string | null | undefined {
   useEffect(() => {
     if (clerkEmail) return;
     let mounted = true;
-    void getAccountEmailFromBackground().then((email) => {
-      if (mounted) setWorkerEmail(email);
+    void getAccountFromBackground().then((account) => {
+      if (mounted) setWorkerEmail(account.email);
     });
     return () => {
       mounted = false;
@@ -590,7 +570,7 @@ function AccountMenu({ email }: { email?: string }) {
                 <span className="sr-only">, </span>
                 {/* On the focused item's tint: one step darker than helper text. */}
                 <span className="block text-xs text-neutral-600 dark:text-neutral-400">
-                  Of bookmark.land in this browser
+                  Signs you out of bookmark.land in this browser
                 </span>
               </span>
             </button>
@@ -606,12 +586,40 @@ function AccountMenu({ email }: { email?: string }) {
   );
 }
 
+/**
+ * The footer's plan line, with its failure kept to itself: the query throwing
+ * (as convex/react does at the call site) or answering null leaves the page's
+ * own state above, a confirmed save included, as it is. Retry mounts the
+ * query afresh, which drops its subscription so the server is asked again.
+ */
+function PlanSummary({ retryClassName }: { retryClassName: string }) {
+  const [attempt, setAttempt] = useState(0);
+  const failed = (
+    <div className="flex items-center gap-2">
+      <StatusLine tone="error" role="alert" className="min-w-0 flex-1">
+        Couldn&apos;t load your plan and bookmark count.
+      </StatusLine>
+      <button type="button" onClick={() => setAttempt(attempt + 1)} className={retryClassName}>
+        Retry
+      </button>
+    </div>
+  );
+  return (
+    <LibraryErrorBoundary key={attempt} fallback={() => failed}>
+      <PlanLine failed={failed} />
+    </LibraryErrorBoundary>
+  );
+}
+
 /** Plan and library size; the count keeps its denominator. */
-function PlanLine({
-  summary,
-}: {
-  summary: NonNullable<FunctionReturnType<typeof api.subscriptions.getSubscriptionInfo>> | undefined;
-}) {
+function PlanLine({ failed }: { failed: ReactNode }) {
+  // Session summary — the authenticated read model for account limits and
+  // bookmark counts. Live, so a Quick save bumps the count in place.
+  const summary = useQuery(api.subscriptions.getSubscriptionInfo, {});
+  useEffect(() => {
+    if (summary === null) console.error("[extension] Subscription summary query returned no data");
+  }, [summary]);
+  if (summary === null) return failed;
   if (summary === undefined) {
     return <p className={`leading-[18px] ${MUTED}`}>Loading your plan…</p>;
   }

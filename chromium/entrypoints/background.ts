@@ -355,8 +355,10 @@ export default defineBackground(() => {
 
     if (typed.type === GET_ACCOUNT_MESSAGE) {
       void getToken()
-        .then((snapshot) => sendResponse({ email: snapshot?.email ?? null }))
-        .catch(() => sendResponse({ email: null }));
+        .then((snapshot) =>
+          sendResponse({ accountId: snapshot?.accountId ?? null, email: snapshot?.email ?? null }),
+        )
+        .catch(() => sendResponse({ accountId: null, email: null }));
       return true;
     }
 

@@ -42,6 +42,8 @@ export function QuickSaveSection({
 }) {
   // undefined = resolving; null = not a saveable page
   const [tab, setTab] = useState<TabInfo | null | undefined>(undefined);
+  // A web page whose address is over the length a Bookmark takes.
+  const [tooLong, setTooLong] = useState(false);
   const [saveState, setSaveState] = useState<QuickSaveState | null>(null);
   const createBookmark = useMutation(api.bookmarkMutations.create);
   const statusLine = useRef<HTMLParagraphElement>(null);
@@ -51,6 +53,7 @@ export function QuickSaveSection({
     void browser.tabs
       .query({ active: true, currentWindow: true })
       .then(([active]) => {
+        setTooLong(!isSaveableUrl(active?.url) && /^https?:\/\//.test(active?.url ?? ""));
         setTab(
           active && isSaveableUrl(active.url)
             ? { url: active.url, title: active.title }
@@ -125,7 +128,9 @@ export function QuickSaveSection({
       {view.kind === "checking" && <p className={MUTED}>Checking this page…</p>}
       {view.kind === "unsupported" && (
         <p className={MUTED}>
-          This page can&apos;t be saved — only web pages (http/https) can.
+          {tooLong
+            ? "This address is too long to save."
+            : "This page can't be saved — only web pages (http/https) can."}
         </p>
       )}
       {bookmarkId && (
@@ -153,7 +158,7 @@ export function QuickSaveSection({
       {tab && (
         <div className="min-w-0">
           {tab.title?.trim() && (
-            <p className="truncate font-medium" title={tab.title}>
+            <p className="line-clamp-2 font-medium" title={tab.title}>
               {tab.title.trim()}
             </p>
           )}

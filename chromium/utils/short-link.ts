@@ -87,11 +87,11 @@ export const trackedQrAddress = (shortUrl: string) => `${shortUrl}?qr`;
 
 const count = (n: number) => n.toLocaleString("en-US");
 
-/** "38 of 50 left this month · Pro plan"; on plans that cap the kept short links, the kept count leads. */
+/** "38 of 50 left this month · Pro plan"; on plans that cap the kept short links, "12 of 25 short links in use · 13 left this month". */
 export function allowanceLine(usage: ShortLinkUsage, withPlan = false): string {
   const left = count(Math.max(0, usage.monthly - usage.created));
   if (usage.liveCap !== undefined) {
-    return `${count(Math.min(usage.held ?? 0, usage.liveCap))} of ${count(usage.liveCap)} kept · ${left} left this month`;
+    return `${count(Math.min(usage.held ?? 0, usage.liveCap))} of ${count(usage.liveCap)} short links in use · ${left} left this month`;
   }
   return `${left} of ${count(usage.monthly)} left this month${withPlan ? ` · ${TIER_LABEL[usage.tier]} plan` : ""}`;
 }
@@ -119,13 +119,15 @@ export function limitReached(
 
 /**
  * Where a creation that hasn't been answered is recorded in the extension's
- * session storage: one key per account and parsed address, so a record only
- * ever applies to the account and page it was made for. It has no time
+ * session storage: one key per account id (the stable one the background
+ * worker tracks, never the email, which can be missing on one open and there
+ * on the next) and parsed address, so a record only ever applies to the
+ * account and page it was made for. It has no time
  * limit: it goes when the request is answered, when a short link for the
  * address shows up in the list, or with the browser session.
  */
-export const createRecordKey = (account: string, address: string) =>
-  `bookmark-land:short-link-create:${account}:${address}`;
+export const createRecordKey = (accountId: string, address: string) =>
+  `bookmark-land:short-link-create:${accountId}:${address}`;
 
 /** When the recorded creation started; null for no record or one that isn't ours. */
 export function readCreateRecord(value: unknown): number | null {
@@ -171,8 +173,12 @@ export type ShortLinkView =
       state: ShortLinkState;
       outcome: "created-copied" | "created" | "existing";
     }
-  /** A creation was started and the popup closed before its answer. */
-  | { kind: "unfinished"; at: number; checking: boolean }
+  /**
+   * A creation was started and the popup closed before its answer. "Create
+   * short link anyway" passes the checks of an ordinary Create: none is
+   * offered at a reached `limit`, and it waits for Quick save (`wait`).
+   */
+  | { kind: "unfinished"; at: number; checking: boolean; limit: boolean; wait: null | "page" }
   /** The month's allowance or the kept-at-once cap is reached. */
   | { kind: "limit" }
   | {
@@ -189,8 +195,9 @@ export type ShortLinkView =
 /**
  * What the Short link view shows. Precedence: a finished creation; short
  * links closed to the account; a creation in flight or refused; an address
- * that is never sent; load failures; loading; the page's existing short
- * link; an unfinished creation; a reached limit; then Create.
+ * that is never sent; load failures (the account id among them); loading;
+ * the page's existing short link; an unfinished creation; a reached limit;
+ * then Create.
  */
 export function deriveShortLinkView(input: {
   /** The page's address, parsed (see parseAddress). */
@@ -198,10 +205,12 @@ export function deriveShortLinkView(input: {
   /** undefined = loading */
   usage: ShortLinkUsage | Error | undefined;
   list: ShortLinkList | Error | undefined;
+  /** The account's stable id: undefined = not known yet, null = the worker couldn't say */
+  accountId: string | null | undefined;
   /** undefined = Quick save is still checking or saving the page; null = not a Bookmark */
   bookmarkId: string | null | undefined;
   creation: ShortLinkCreation | null;
-  /** When an unanswered creation for this account and address started; undefined = not read yet */
+  /** When an unanswered creation for this account and address started; undefined = not read yet (it can't be before the account id is known) */
   record: number | null | undefined;
 }): ShortLinkView {
   const { address, usage, list, creation, record } = input;
@@ -219,20 +228,22 @@ export function deriveShortLinkView(input: {
   if (creation?.status === "creating") return { ...create, wait: creation.slow ? "creating-slow" : "creating" };
   if (creation?.status === "refused") return { kind: "refused", sentence: creation.sentence };
   if (refusedLocally(address)) return { kind: "refused", sentence: "This address can't be shortened." };
-  if (usage instanceof Error || list instanceof Error) return { kind: "failed" };
+  if (usage instanceof Error || list instanceof Error || input.accountId === null) return { kind: "failed" };
+  const wait = input.bookmarkId === undefined ? "page" : null;
   // With a record, the view never falls back to a plain Create while the list loads.
-  if (record != null && list === undefined) return { kind: "unfinished", at: record, checking: true };
+  if (record != null && list === undefined) return { kind: "unfinished", at: record, checking: true, limit: false, wait };
   if (usage === undefined || list === undefined || record === undefined) return { ...create, wait: "allowance" };
 
   const match = findShortLink(list.links, address);
   if (match) {
     return { kind: "link", shortUrl: match.shortUrl, targetUrl: match.targetUrl, state: shortLinkState(match), outcome: "existing" };
   }
-  if (record !== null) return { kind: "unfinished", at: record, checking: false };
-  if (limitReached(usage)) return { kind: "limit" };
+  const limit = limitReached(usage) !== null;
+  if (record !== null) return { kind: "unfinished", at: record, checking: false, limit, wait };
+  if (limit) return { kind: "limit" };
   return {
     ...create,
-    wait: input.bookmarkId === undefined ? "page" : null,
+    wait,
     truncated: list.truncated,
     failed: creation?.status === "failed",
   };

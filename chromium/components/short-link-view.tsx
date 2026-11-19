@@ -5,9 +5,11 @@ import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
 import { ExternalLink } from "lucide-react";
 import { openUpgrade } from "@/components/quick-save";
-import { QrExports, QrImage, TEXT_LINK, useQrSvg } from "@/components/qr-view";
+import { PageAddress, QrExports, QrImage, TEXT_LINK, useQrSvg } from "@/components/qr-view";
 import { StatusLine } from "@/components/status-line";
 import { ViewHeader } from "@/components/view-header";
+import { MORE_BELOW, useScrollMore } from "@/hooks/use-scroll-more";
+import { getAccountFromBackground } from "@/utils/auth-token";
 import { copyText, copyWhenReady } from "@/utils/clipboard";
 import {
   allowanceLine,
@@ -62,8 +64,6 @@ export type ShortLinkModel = {
  */
 export function useShortLink(
   tab: PageTab | null | undefined,
-  /** Who is signed in; undefined = not known yet, null = the worker has no email. */
-  account: string | null | undefined,
   bookmarkId: string | null | undefined,
 ): ShortLinkModel {
   const [wanted, setWanted] = useState(false);
@@ -88,8 +88,20 @@ export function useShortLink(
     list?: ShortLinkList | Error;
   };
 
+  // The stable account id the background worker tracks: what the record is
+  // keyed by. undefined = not answered yet; null = the worker couldn't say.
+  const [accountId, setAccountId] = useState<string | null | undefined>(undefined);
+  const [asked, setAsked] = useState(0);
+  useEffect(() => {
+    let current = true;
+    void getAccountFromBackground().then((account) => current && setAccountId(account.id));
+    return () => {
+      current = false;
+    };
+  }, [asked]);
+
   const address = tab?.address;
-  const key = address && account !== undefined ? createRecordKey(account ?? "", address) : null;
+  const key = address && accountId ? createRecordKey(accountId, address) : null;
   const [record, setRecord] = useState<number | null | undefined>(undefined);
   useEffect(() => {
     if (!key) return;
@@ -151,10 +163,16 @@ export function useShortLink(
   return {
     open: !usage || usage instanceof Error || usage.available,
     usage: usage instanceof Error ? undefined : usage,
-    view: address ? deriveShortLinkView({ address, usage, list, bookmarkId, creation, record }) : null,
+    view: address ? deriveShortLinkView({ address, usage, list, accountId, bookmarkId, creation, record }) : null,
     load: () => setWanted(true),
     create,
-    reload: () => setDropped(true),
+    reload: () => {
+      setDropped(true);
+      if (accountId === null) {
+        setAccountId(undefined);
+        setAsked((n) => n + 1);
+      }
+    },
   };
 }
 
@@ -214,7 +232,7 @@ function LinkBlock({ view, copyButton }: { view: Extract<View, { kind: "link" }>
             className={`min-w-0 flex-1 rounded-md border border-neutral-300 bg-transparent px-2 py-2 dark:border-neutral-700 ${RING}`}
           />
         ) : (
-          <p className="min-w-0 flex-1 break-all font-medium">{text}</p>
+          <p className="min-w-0 flex-1 font-medium [overflow-wrap:anywhere]">{text}</p>
         )}
         {view.state !== "blocked" && copy}
       </div>
@@ -226,7 +244,16 @@ function LinkBlock({ view, copyButton }: { view: Extract<View, { kind: "link" }>
           Couldn&apos;t copy. Select the short link and copy it.
         </StatusLine>
       )}
-      <p className={`break-all text-xs ${MUTED}`}>Opens {view.targetUrl}</p>
+      <PageAddress
+        className={MUTED}
+        text={
+          view.state === "blocked"
+            ? `Opened ${view.targetUrl}`
+            : view.state === "paused"
+              ? `Points to ${view.targetUrl}. It won't open while paused.`
+              : `Opens ${view.targetUrl}`
+        }
+      />
       {view.state === "active" && svg && (
         <>
           <hr className="border-neutral-200 dark:border-neutral-800" />
@@ -254,7 +281,8 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
   const { usage, create, reload } = model;
   // The root derives a view whenever there is a page, which this view needs to open.
   const view = model.view!;
-  const body = useRef<HTMLElement>(null);
+  const scroll = useScrollMore();
+  const body = scroll.element;
   const copyButton = useRef<HTMLButtonElement>(null);
 
   // After a creation, focus goes to Copy. Any other change that removed the
@@ -265,8 +293,8 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
     if (shown.current === outcome) return;
     shown.current = outcome;
     if (outcome === "created" || outcome === "created-copied") copyButton.current?.focus();
-    else if (document.activeElement === document.body) body.current?.focus();
-  }, [outcome]);
+    else if (document.activeElement === document.body) body?.focus();
+  }, [outcome, body]);
 
   const page = (
     <div className="min-w-0">
@@ -275,7 +303,7 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
           {tab.title.trim()}
         </p>
       )}
-      <p className={`mt-0.5 break-all text-xs ${MUTED}`}>{tab.url}</p>
+      <PageAddress text={tab.url} className={`mt-0.5 ${MUTED}`} />
     </div>
   );
   const allowance = usage && <p className={`text-xs ${MUTED}`}>{allowanceLine(usage, view.kind === "create")}</p>;
@@ -311,6 +339,8 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
       </>
     );
   } else if (view.kind === "unfinished") {
+    // "Create short link anyway" passes the same checks as an ordinary Create.
+    const waiting = view.checking || view.wait !== null;
     content = (
       <>
         {page}
@@ -323,15 +353,21 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
         >
           {view.checking ? "Checking…" : "Check again"}
         </button>
-        <button
-          type="button"
-          aria-disabled={view.checking}
-          onClick={() => !view.checking && create()}
-          className={OUTLINE}
-        >
-          Create short link anyway
-        </button>
-        <p className={`text-xs ${MUTED}`}>This may use a second short link.</p>
+        {view.limit ? (
+          <>
+            {usage && limitReached(usage)?.sentences.map((sentence) => <p key={sentence}>{sentence}</p>)}
+            {allowance}
+          </>
+        ) : (
+          <>
+            <button type="button" aria-disabled={waiting} onClick={() => !waiting && create()} className={OUTLINE}>
+              Create short link anyway
+            </button>
+            <p role="status" className={`text-xs ${MUTED}`}>
+              {!view.checking && view.wait === "page" ? "Checking this page…" : "This may use a second short link."}
+            </p>
+          </>
+        )}
       </>
     );
   } else if (view.kind === "limit") {
@@ -341,7 +377,8 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
         {page}
         {limit?.sentences.map((sentence) => <p key={sentence}>{sentence}</p>)}
         {limit?.upgrade && (
-          <button type="button" onClick={openUpgrade} className={OUTLINE}>
+          // The only way forward here, so it is the filled button.
+          <button type="button" onClick={openUpgrade} className={FILLED}>
             Upgrade
           </button>
         )}
@@ -369,7 +406,7 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
           onClick={() => view.wait === null && create()}
           className={FILLED}
         >
-          {creating ? "Creating…" : "Create short link"}
+          {creating ? "Creating…" : COPY_ON_CREATE ? "Create and copy short link" : "Create short link"}
         </button>
         <div role="status" className={`flex flex-col gap-2 text-xs ${MUTED}`}>
           {view.wait === "allowance" ? (
@@ -397,8 +434,12 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
   return (
     <>
       <ViewHeader title="Short link" onBack={onBack} focusOnOpen />
-      <main ref={body} tabIndex={-1} className="flex min-h-0 scroll-py-2 flex-col gap-2 overflow-y-auto p-3 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring">
-        {content}
+      <main
+        ref={scroll.ref}
+        tabIndex={-1}
+        className={`min-h-0 scroll-py-2 overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${scroll.more ? MORE_BELOW : ""}`}
+      >
+        <div className="flex flex-col gap-2 p-3">{content}</div>
       </main>
     </>
   );
