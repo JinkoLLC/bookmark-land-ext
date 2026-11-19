@@ -6,6 +6,7 @@ import {
   importCounts,
   importHeading,
   importLinks,
+  importSample,
   importOutcome,
   importSubtext,
   sampleTitle,
@@ -16,7 +17,9 @@ const SAMPLE_SIZE = 8;
 
 const FOCUS_RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
-const OUTLINE_BUTTON = `inline-flex min-h-6 items-center rounded-full border border-neutral-300 px-4 py-2 font-semibold transition hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800 ${FOCUS_RING}`;
+const BUTTON = `inline-flex max-w-full items-center gap-2 rounded-full px-5 py-2.5 text-left font-semibold transition ${FOCUS_RING}`;
+const FILLED_BUTTON = `${BUTTON} bg-emerald-700 text-white shadow-lg shadow-emerald-900/20 hover:bg-emerald-800 motion-safe:hover:-translate-y-0.5`;
+const OUTLINE_BUTTON = `${BUTTON} border border-neutral-300 hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800`;
 
 const openWebPath = (path: string) =>
   void browser.tabs.create({ url: `${import.meta.env.WXT_WEB_APP_URL}${path}` });
@@ -29,11 +32,12 @@ const hostOf = (url: string) => {
   }
 };
 
+// Only a complete import gets the success colours.
 const ICONS = {
-  imported: PartyPopper,
-  partial: Check,
-  "already-here": Check,
-  nothing: CircleAlert,
+  imported: { Icon: PartyPopper, disc: "bg-emerald-700 text-white" },
+  partial: { Icon: CircleAlert, disc: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-100" },
+  "already-here": { Icon: Check, disc: "bg-slate-600 text-white" },
+  nothing: { Icon: CircleAlert, disc: "bg-slate-600 text-white" },
 };
 
 /**
@@ -49,7 +53,7 @@ export function ImportComplete({
   onImportMore,
 }: {
   result: ImportResult;
-  /** The selection in tree order; may include ones that were duplicates. */
+  /** The bookmarks that were sent, in tree order; may include ones that were duplicates. */
   sample: { url: string; title?: string }[];
   /** The plan's bookmark limit, when the library reached it and that explains the skips. */
   planLimit?: number | null;
@@ -61,7 +65,7 @@ export function ImportComplete({
   const outcome = importOutcome(result);
   const added = result.imported + result.restored;
   const festive = outcome === "imported";
-  const Icon = ICONS[outcome];
+  const { Icon, disc } = ICONS[outcome];
   const libraryPath = added > 0 ? links.primaryPath : "/dashboard";
   // The setup tab may have been closed since: then this is the usual "open the library".
   const backToSetup = async (tabId: number) => {
@@ -74,7 +78,9 @@ export function ImportComplete({
       openWebPath(libraryPath);
     }
   };
-  const shown = sample.slice(0, Math.min(SAMPLE_SIZE, added));
+  const shown = importSample(result, sample, SAMPLE_SIZE);
+  // Nothing came over because the plan is full: upgrading is the way forward.
+  const upgradeFirst = planLimit !== null && outcome === "nothing";
   const title = sampleTitle(result);
   const counts = importCounts(result);
 
@@ -88,9 +94,7 @@ export function ImportComplete({
 
       <div className="relative text-center">
         <div
-          className={`mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg shadow-emerald-900/25 ${
-            outcome === "nothing" ? "bg-slate-600" : "bg-emerald-700"
-          }`}
+          className={`mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full shadow-lg shadow-emerald-900/25 ${disc}`}
         >
           <Icon className="h-7 w-7" aria-hidden="true" />
         </div>
@@ -103,7 +107,7 @@ export function ImportComplete({
         >
           {importHeading(result)}
         </h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{importSubtext(result)}</p>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{importSubtext(result, planLimit)}</p>
       </div>
 
       {counts.length > 0 && (
@@ -136,11 +140,11 @@ export function ImportComplete({
       )}
 
       {links.collections.length > 1 && (
-        <section aria-label="Your new collections" className="relative min-w-0">
+        <section aria-label="Your new collections" className="relative min-w-0 text-center">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
             Your new collections
           </h3>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap justify-center gap-2">
             {links.collections.map((c) => (
               <button
                 key={c.path}
@@ -156,25 +160,24 @@ export function ImportComplete({
         </section>
       )}
 
-      {planLimit !== null && (
-        <p className="relative text-sm text-slate-700 dark:text-slate-200">
-          Your plan&apos;s limit of {formatCount(planLimit)} bookmarks was reached.
-        </p>
-      )}
-
       {returnTabId !== null && (
         <p className="relative text-center text-sm font-medium text-emerald-900 dark:text-emerald-100">
           Go back to setup to finish.
         </p>
       )}
 
-      <div className="relative flex flex-wrap items-center gap-3">
+      <div className="relative flex flex-wrap items-center justify-center gap-3">
+        {upgradeFirst && (
+          <button type="button" onClick={() => openWebPath("/settings")} className={FILLED_BUTTON}>
+            Upgrade
+          </button>
+        )}
         <button
           type="button"
           onClick={() =>
             returnTabId !== null ? void backToSetup(returnTabId) : openWebPath(libraryPath)
           }
-          className={`inline-flex max-w-full items-center gap-2 rounded-full bg-emerald-700 px-5 py-2.5 text-left font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:bg-emerald-800 motion-safe:hover:-translate-y-0.5 ${FOCUS_RING}`}
+          className={upgradeFirst ? OUTLINE_BUTTON : FILLED_BUTTON}
         >
           {returnTabId !== null
             ? "Back to setup"
@@ -183,7 +186,7 @@ export function ImportComplete({
               : "Open my library"}
           <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
-        {planLimit !== null && (
+        {planLimit !== null && !upgradeFirst && (
           <button type="button" onClick={() => openWebPath("/settings")} className={OUTLINE_BUTTON}>
             Upgrade
           </button>

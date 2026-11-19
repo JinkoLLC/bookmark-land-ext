@@ -30,7 +30,7 @@ const RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const MUTED = "text-neutral-500 dark:text-neutral-400";
 const OUTLINE = `rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 aria-disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800 ${RING}`;
-const FILLED = `rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 aria-disabled:opacity-70 ${RING}`;
+const FILLED = `rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover aria-disabled:opacity-70 ${RING}`;
 
 /**
  * The decided fallback if a real toolbar popup refuses a clipboard write

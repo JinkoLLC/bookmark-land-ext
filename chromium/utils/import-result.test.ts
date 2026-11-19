@@ -3,6 +3,7 @@ import {
   importCounts,
   importHeading,
   importLinks,
+  importSample,
   importOutcome,
   importSubtext,
   reachedPlanLimit,
@@ -58,7 +59,8 @@ describe("the result screen's decisions", () => {
   it("words the heading from what arrived and what was skipped", () => {
     expect(importHeading(all)).toBe("1,284 bookmarks imported");
     expect(importHeading({ ...all, imported: 1, restored: 0 })).toBe("1 bookmark imported");
-    expect(importHeading(partial)).toBe("6 bookmarks imported, 47 could not be imported");
+    expect(importHeading(partial)).toBe("Only 6 bookmarks were imported");
+    expect(importHeading({ ...partial, imported: 1, restored: 0 })).toBe("Only 1 bookmark was imported");
     expect(importHeading(here)).toBe("Already all here");
     expect(importHeading(nothing)).toBe("Nothing was imported");
   });
@@ -68,12 +70,38 @@ describe("the result screen's decisions", () => {
     expect(importSubtext(here)).toContain("already in your library");
   });
 
+  it("says the skipped count once, with the plan's limit as its cause when reached", () => {
+    expect(importSubtext(partial, 100)).toBe(
+      "47 weren't imported because your plan's limit of 100 bookmarks was reached.",
+    );
+    expect(importSubtext(nothing, 100)).toBe(
+      "47 bookmarks weren't imported because your plan's limit of 100 bookmarks was reached.",
+    );
+    expect(importSubtext(partial)).toMatch(/^47 could not be imported\. /);
+    for (const result of [partial, nothing]) {
+      const said = [importHeading(result), importSubtext(result, 100), ...importCounts(result)];
+      expect(said.filter((line) => line.includes("47"))).toHaveLength(1);
+    }
+  });
+
+  it("shows the sample only for a complete import, one row per address", () => {
+    const sent = [
+      { url: "https://a.example/", title: "A" },
+      { url: "https://a.example/", title: "A again" },
+      { url: "https://b.example/", title: "B" },
+      { url: "https://b.example/other", title: "B" },
+      { url: "https://c.example/" },
+    ];
+    expect(importSample(all, sent, 8)).toEqual([sent[1], sent[3], sent[4]]);
+    expect(importSample({ ...all, imported: 1, restored: 0 }, sent, 8)).toHaveLength(1);
+    for (const result of [partial, here, nothing]) expect(importSample(result, sent, 8)).toEqual([]);
+  });
+
   it("lists only the counts that aren't zero", () => {
     expect(importCounts(partial)).toEqual([
       "4 new",
       "2 restored from Trash",
       "11 already in your library",
-      "47 could not be imported",
     ]);
     expect(importCounts(all)).toEqual(["1,280 new", "4 restored from Trash"]);
     expect(importCounts(here)).toEqual(["64 already in your library"]);

@@ -68,7 +68,8 @@ export function importHeading(result: ImportResult): string {
     case "imported":
       return `${added} imported`;
     case "partial":
-      return `${added} imported, ${formatCount(result.skipped)} could not be imported`;
+      // The skipped count and its cause are the subtext's; said once.
+      return `Only ${added} ${result.imported + result.restored === 1 ? "was" : "were"} imported`;
     case "already-here":
       return "Already all here";
     case "nothing":
@@ -76,26 +77,31 @@ export function importHeading(result: ImportResult): string {
   }
 }
 
-export function importSubtext(result: ImportResult): string {
-  switch (importOutcome(result)) {
-    case "imported":
-      return "Your library just grew. Everything is searchable on bookmark.land and in the Library panel.";
-    case "partial":
-      return "What came over is searchable on bookmark.land and in the Library panel.";
-    case "already-here":
-      return "Every bookmark you picked was already in your library, so nothing new was added.";
-    case "nothing":
-      return `${bookmarks(result.skipped)} could not be imported.`;
-  }
+/** `planLimit`: the plan's bookmark limit when reaching it explains the skips. */
+export function importSubtext(result: ImportResult, planLimit: number | null = null): string {
+  const outcome = importOutcome(result);
+  if (outcome === "imported")
+    return "Your library just grew. Everything is searchable on bookmark.land and in the Library panel.";
+  if (outcome === "already-here")
+    return "Every bookmark you picked was already in your library, so nothing new was added.";
+  // "partial" counts the rest of the selection, "nothing" counts bookmarks.
+  const skipped = outcome === "partial" ? formatCount(result.skipped) : bookmarks(result.skipped);
+  const verb = result.skipped === 1 ? "wasn't" : "weren't";
+  if (planLimit !== null)
+    return `${skipped} ${verb} imported because your plan's limit of ${bookmarks(planLimit)} was reached.`;
+  const could = `${skipped} could not be imported.`;
+  return outcome === "partial"
+    ? `${could} What came over is searchable on bookmark.land and in the Library panel.`
+    : could;
 }
 
-/** The counts line: only the counts that aren't zero. */
+/** The counts line: only the counts that aren't zero. The skipped count is
+ * left out: the subtext always states it, with its cause when known. */
 export function importCounts(result: ImportResult): string[] {
   const parts: [number, string][] = [
     [result.imported, "new"],
     [result.restored, "restored from Trash"],
     [result.duplicates, "already in your library"],
-    [result.skipped, "could not be imported"],
   ];
   return parts.filter(([n]) => n > 0).map(([n, label]) => `${formatCount(n)} ${label}`);
 }
@@ -119,4 +125,22 @@ export function sampleTitle(result: ImportResult): string {
   return result.skipped > 0 || result.duplicates > 0
     ? "Some of what you picked"
     : "Some of what came over";
+}
+
+/**
+ * The rows of the sample list, from the bookmarks that were sent. Only a
+ * complete import shows it: the sample is drawn from the selection, so after
+ * skips it could list bookmarks that didn't come over. One row per address
+ * (the same page can sit in two folders) and per title.
+ */
+export function importSample<T extends { url: string; title?: string }>(
+  result: ImportResult,
+  sent: readonly T[],
+  size: number,
+): T[] {
+  if (importOutcome(result) !== "imported") return [];
+  // By address, then by the title a row shows: a sample needn't say one thing twice.
+  const byUrl = new Map(sent.map((b) => [b.url, b])).values();
+  const unique = [...new Map([...byUrl].map((b) => [b.title?.trim() || b.url, b])).values()];
+  return unique.slice(0, Math.min(size, result.imported + result.restored));
 }

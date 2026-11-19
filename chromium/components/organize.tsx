@@ -6,6 +6,7 @@ import { ConvexError } from "convex/values";
 import { Check, ChevronDown, Globe, Star, X } from "lucide-react";
 import {
   filterPickerRows,
+  inputAfterTagSaved,
   livePageCounts,
   pageFeedNote,
   pickerRows,
@@ -26,9 +27,12 @@ type LivePages = {
   state: "loading" | "failed" | "ready";
   /** Live pages per collection; empty until loaded. */
   counts: Map<string, number>;
+  /** Asks again after a failure, leaving the rest of the popup as it is. */
+  retry: () => void;
 };
 
 const FEEDS = { feeds: { query: api.userPages.collectionFeeds, args: {} } };
+const NONE = {};
 
 /**
  * Which collections live pages show. Read with useQueries so a failed load
@@ -36,9 +40,16 @@ const FEEDS = { feeds: { query: api.userPages.collectionFeeds, args: {} } };
  * instead of the whole popup falling to the error screen.
  */
 function useLivePages(): LivePages {
-  const feeds = useQueries(FEEDS).feeds as CollectionFeed[] | Error | undefined;
-  if (feeds instanceof Error) return { state: "failed", counts: new Map() };
-  return { state: feeds ? "ready" : "loading", counts: livePageCounts(feeds) };
+  // A failed query keeps its error while subscribed: retrying drops the
+  // subscription for one render, so the client asks the server again.
+  const [dropped, setDropped] = useState(false);
+  useEffect(() => {
+    if (dropped) setDropped(false);
+  }, [dropped]);
+  const retry = () => setDropped(true);
+  const feeds = useQueries(dropped ? NONE : FEEDS).feeds as CollectionFeed[] | Error | undefined;
+  if (feeds instanceof Error) return { state: "failed", counts: new Map(), retry };
+  return { state: feeds ? "ready" : "loading", counts: livePageCounts(feeds), retry };
 }
 
 /**
@@ -118,6 +129,8 @@ function CollectionPicker({
   const [active, setActive] = useState(0);
   const trigger = useRef<HTMLButtonElement>(null);
   const panel = useRef<HTMLDivElement>(null);
+  /** A pointer press is under way: its click closes the panel, not the blur. */
+  const pressing = useRef(false);
   const field = useRef<HTMLInputElement>(null);
   const listId = useId();
 
@@ -139,6 +152,29 @@ function CollectionPicker({
   useEffect(() => {
     if (open) document.getElementById(`${listId}-${active}`)?.scrollIntoView({ block: "nearest" });
   }, [open, active, listId]);
+
+  // A click outside closes the panel once it has landed. Closing earlier (on
+  // blur or pointerdown) would unmount the in-flow panel and move what is
+  // under the pointer before the click arrives.
+  useEffect(() => {
+    if (!open) return;
+    const down = () => (pressing.current = true);
+    const up = () => (pressing.current = false);
+    const click = (event: MouseEvent) => {
+      // The path as dispatched: a clicked control may already be gone (Retry).
+      const path = event.composedPath();
+      if (!path.includes(panel.current!) && !path.includes(trigger.current!)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", down, true);
+    document.addEventListener("pointerup", up, true);
+    document.addEventListener("click", click);
+    return () => {
+      pressing.current = false;
+      document.removeEventListener("pointerdown", down, true);
+      document.removeEventListener("pointerup", up, true);
+      document.removeEventListener("click", click);
+    };
+  }, [open]);
 
   const show = () => {
     setFilter("");
@@ -207,9 +243,10 @@ function CollectionPicker({
       {open && (
         <div
           ref={panel}
+          // Focus leaving by keyboard closes at once.
           onBlur={(event) => {
             const to = event.relatedTarget;
-            if (to !== trigger.current && !event.currentTarget.contains(to)) setOpen(false);
+            if (!pressing.current && to !== trigger.current && !event.currentTarget.contains(to)) setOpen(false);
           }}
           className="flex max-h-[200px] flex-col rounded-md border border-neutral-300 dark:border-neutral-700"
         >
@@ -219,7 +256,7 @@ function CollectionPicker({
             aria-label="Filter collections"
             aria-autocomplete="list"
             aria-controls={listId}
-            aria-expanded={rows.length > 0}
+            aria-expanded
             aria-activedescendant={rows[active] ? `${listId}-${active}` : undefined}
             value={filter}
             onChange={(event) => {
@@ -240,7 +277,11 @@ function CollectionPicker({
               <p className="min-w-0 flex-1">Couldn&apos;t check which collections are public.</p>
               <button
                 type="button"
-                onClick={() => window.location.reload()}
+                onClick={() => {
+                  // This button goes away while the answer loads: focus stays in the panel.
+                  field.current?.focus();
+                  live.retry();
+                }}
                 className={`min-h-6 shrink-0 px-2 font-medium ${OUTLINE}`}
               >
                 Retry
@@ -248,7 +289,7 @@ function CollectionPicker({
             </div>
           )}
           {rows.length === 0 ? (
-            <p role="status" className={`border-t border-neutral-200 px-2 py-1.5 dark:border-neutral-800 ${MUTED}`}>
+            <p id={listId} role="status" className={`border-t border-neutral-200 px-2 py-1.5 dark:border-neutral-800 ${MUTED}`}>
               No collections match &quot;{filter.trim()}&quot;
             </p>
           ) : (
@@ -274,7 +315,10 @@ function CollectionPicker({
                   }}
                   className={`flex items-center gap-2 rounded px-2 py-1 ${
                     canChoose(row) ? "cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800" : "opacity-60"
-                  } ${i === active ? "bg-neutral-100 outline-2 -outline-offset-2 outline-ring dark:bg-neutral-800" : ""}`}
+                  } ${
+                    // A fill and a bar at the leading edge; the ring belongs to the filter field.
+                    i === active ? "bg-neutral-100 shadow-[inset_3px_0_0_var(--ring)] dark:bg-neutral-800" : ""
+                  }`}
                 >
                   <CollectionGlyph icon={row.icon} color={row.color} className="h-3.5 w-3.5" />
                   <span className="min-w-0 flex-1">
@@ -282,7 +326,8 @@ function CollectionPicker({
                       <span className={`truncate ${row.id === selected.id ? "font-medium" : ""}`}>{row.name}</span>
                       {onPage(row) && <span className="shrink-0 text-neutral-600 dark:text-neutral-400"> · on a page</span>}
                     </span>
-                    {row.path && <span className="block truncate text-xs text-neutral-600 dark:text-neutral-400"> {row.path}</span>}
+                    {/* Wraps: same-named collections differ at the end of their path. */}
+                    {row.path && <span className="block break-words text-xs text-neutral-600 dark:text-neutral-400"> {row.path}</span>}
                   </span>
                   {row.id === selected.id && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
                 </div>
@@ -351,7 +396,7 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
     setError(null);
     try {
       await addTag({ bookmarkId, tagName });
-      setInput("");
+      setInput((current) => inputAfterTagSaved(current, name));
     } catch (e) {
       setError(describe(e, "Couldn't add that tag."));
     }
@@ -399,7 +444,7 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
           }}
           list="tag-suggestions"
           aria-label="Add tag"
-          placeholder={currentNames.length ? "Add tag" : "Add tags…"}
+          placeholder="Add tag"
           className={`min-w-24 flex-1 rounded-md border border-neutral-300 bg-transparent px-2 py-0.5 placeholder:text-neutral-500 dark:border-neutral-700 dark:placeholder:text-neutral-400 ${RING}`}
         />
         <datalist id="tag-suggestions">

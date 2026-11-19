@@ -224,18 +224,19 @@ function SignedOutView() {
         <PlainView>
           <p>Sign in to bookmark.land to start saving pages.</p>
           <ul className={`list-disc space-y-1 pl-4 ${MUTED}`}>
-            <li>Click this icon, then <span className="font-medium text-neutral-700 dark:text-neutral-300">Save to bookmark.land</span>.</li>
+            <li>Open bookmark.land from the browser toolbar, then choose <span className="font-medium text-neutral-700 dark:text-neutral-300">Save to bookmark.land</span>.</li>
             {shortcut && (
               <li>
                 Press <kbd className="rounded border border-neutral-300 px-1 font-mono text-xs dark:border-neutral-700">{shortcut}</kbd> to save instantly.
               </li>
             )}
-            <li>Right-click any page or link → Save to bookmark.land.</li>
+            {/* The menu labels registered in entrypoints/background.ts. */}
+            <li>Right-click a page and choose Save to bookmark.land, or a link and choose Save link to bookmark.land.</li>
           </ul>
           <button
             type="button"
             onClick={openSignIn}
-            className={`rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 ${RING}`}
+            className={`rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover ${RING}`}
           >
             Sign in to bookmark.land
           </button>
@@ -338,14 +339,23 @@ function SignedInView() {
                 </button>
               </div>
             )}
-            {summary === null && (
-              <LibraryErrorFallback onRetry={() => window.location.reload()} />
-            )}
             <PrivacyNote />
           </div>
         </main>
         <footer className="flex shrink-0 flex-col border-t border-neutral-200 px-3 pb-2 pt-[7px] text-xs text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
-          {summary !== null && <PlanLine summary={summary} />}
+          {summary === null ? (
+            // Only the plan summary failed; the page's own state above stands.
+            <div className="flex items-center gap-2">
+              <StatusLine tone="error" role="alert" className="min-w-0 flex-1">
+                Couldn&apos;t load your plan and bookmark count.
+              </StatusLine>
+              <button type="button" onClick={() => window.location.reload()} className={`shrink-0 font-medium ${link}`}>
+                Retry
+              </button>
+            </div>
+          ) : (
+            <PlanLine summary={summary} />
+          )}
           <div className="flex items-center gap-2">
             <button
               type="button"
@@ -576,6 +586,8 @@ function AccountMenu({ email }: { email?: string }) {
               <LogOut className="h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
               <span>
                 {signingOut ? "Signing out…" : "Sign out"}
+                {/* Keeps the two lines apart in the button's name. */}
+                <span className="sr-only">, </span>
                 {/* On the focused item's tint: one step darker than helper text. */}
                 <span className="block text-xs text-neutral-600 dark:text-neutral-400">
                   Of bookmark.land in this browser

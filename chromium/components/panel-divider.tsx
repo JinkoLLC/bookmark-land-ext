@@ -8,7 +8,7 @@ import {
 } from "@/utils/panel-layout";
 
 const STEP_BUTTON =
-  "flex h-6 w-6 items-center justify-center rounded border border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800";
+  "flex h-6 w-6 items-center justify-center rounded bg-white text-neutral-600 enabled:hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:text-neutral-400 dark:bg-neutral-900 dark:text-neutral-300 dark:enabled:hover:bg-neutral-800 dark:disabled:text-neutral-500";
 
 /**
  * Draggable separator between the collection tree and the bookmark list.
@@ -78,7 +78,9 @@ export function PanelDivider({
   return (
     // 24 px tall so the line's hit area and the two buttons never cover a row.
     <div className="group relative h-6 shrink-0">
-      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 bg-neutral-200 group-hover:bg-neutral-300 dark:bg-neutral-800 dark:group-hover:bg-neutral-700" />
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-neutral-200 dark:bg-neutral-800" />
+      {/* Grip: says the line can be dragged. */}
+      <div className="pointer-events-none absolute left-1/2 top-1/2 h-1 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-neutral-400 group-hover:bg-neutral-500 dark:bg-neutral-500 dark:group-hover:bg-neutral-400" />
       <div
         role="separator"
         aria-orientation="horizontal"
@@ -123,7 +125,7 @@ export function PanelDivider({
           type="button"
           aria-label="Show more collections"
           title="Show more collections"
-          aria-disabled={value.now >= value.max}
+          disabled={value.now >= value.max}
           onClick={() => step(RESIZE_STEP)}
           className={STEP_BUTTON}
         >
@@ -133,7 +135,7 @@ export function PanelDivider({
           type="button"
           aria-label="Show fewer collections"
           title="Show fewer collections"
-          aria-disabled={value.now <= value.min}
+          disabled={value.now <= value.min}
           onClick={() => step(-RESIZE_STEP)}
           className={STEP_BUTTON}
         >

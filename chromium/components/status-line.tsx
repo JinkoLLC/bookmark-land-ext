@@ -15,7 +15,8 @@ export function StatusLine({
   const Icon = tone === "ok" ? CircleCheck : CircleAlert;
   return (
     <p
-      className={`flex items-start gap-1.5 rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${className}`}
+      // Not a control: it may take focus after a state change, but shows no ring.
+      className={`flex items-start gap-1.5 outline-none ${className}`}
       {...rest}
     >
       <Icon

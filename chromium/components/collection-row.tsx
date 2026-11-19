@@ -49,6 +49,7 @@ export function CollectionRow({
 }) {
   const hasChildren = node.children.length > 0;
   const { publishedUrl } = collectionMenuAt(node, 0, 0);
+  const groupId = `collection-children-${node._id}`;
   return (
     <>
       <div
@@ -56,6 +57,11 @@ export function CollectionRow({
         aria-level={node.depth + 1}
         aria-selected={selected === node._id}
         aria-expanded={hasChildren ? node.isExpanded : undefined}
+        // The children are a sibling group: a row can't contain other rows
+        // without their clicks, hover and focus ring becoming the parent's.
+        aria-owns={hasChildren && node.isExpanded ? groupId : undefined}
+        aria-haspopup="menu"
+        aria-keyshortcuts="Shift+F10"
         tabIndex={tabStop === node._id ? 0 : -1}
         onClick={() => onSelect(node._id)}
         onContextMenu={(e) => {
@@ -105,7 +111,7 @@ export function CollectionRow({
         </span>
       </div>
       {hasChildren && node.isExpanded && (
-        <div role="group">
+        <div role="group" id={groupId}>
           {node.children.map((child) => (
             <CollectionRow
               key={child._id}

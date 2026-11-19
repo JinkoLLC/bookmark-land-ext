@@ -11,7 +11,7 @@ const RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const MUTED = "text-neutral-500 dark:text-neutral-400";
 const OUTLINE = `rounded-md border border-neutral-300 px-3 font-medium hover:bg-neutral-50 aria-disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800 ${RING}`;
-const FILLED = `rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 ${RING}`;
+const FILLED = `rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover ${RING}`;
 export const TEXT_LINK = `rounded underline underline-offset-2 hover:text-neutral-950 dark:hover:text-white ${RING}`;
 
 /**
