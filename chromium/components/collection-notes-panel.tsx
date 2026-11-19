@@ -1,4 +1,4 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from "react";
 import type { Doc } from "@convex/dataModel";
 import { browser } from "wxt/browser";
 import { ArrowLeft, BookOpen, ExternalLink, PencilLine } from "lucide-react";
@@ -10,6 +10,7 @@ type NoteCollection = Pick<
 >;
 
 type NoteMode = "strip" | "full" | "edit";
+
 
 const CollectionNoteEditor = lazy(() =>
   import("@/components/collection-note-editor").then((module) => ({
@@ -128,14 +129,14 @@ function AddNotePrompt({
         <button
           type="button"
           onClick={onEdit}
-          className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
+          className="inline-flex items-center gap-1 rounded-md bg-emerald-700 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Add note
         </button>
         <button
           type="button"
           onClick={onOpenWeb}
-          className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white/70 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-900"
+          className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white/70 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Open in bookmark.land
           <ExternalLink className="h-3 w-3" />
@@ -162,12 +163,21 @@ function PinnedStrip({
   onEdit: () => void;
   onOpenWeb: () => void;
 }) {
+  const noteRef = useRef<HTMLParagraphElement>(null);
+  const [overflows, setOverflows] = useState(false);
+  // shortcut: measured when the note opens or changes, not when the panel is
+  // resized; observe the element if a note can start overflowing while open.
+  useEffect(() => {
+    const note = noteRef.current;
+    setOverflows(!!note && note.scrollHeight > note.clientHeight);
+  }, [expanded, noteText]);
+
   return (
     <section className="mx-2 mb-2 overflow-hidden rounded-lg border border-sky-200 bg-sky-50 text-sky-950 shadow-sm dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-50">
       <button
         type="button"
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-sky-100/70 dark:hover:bg-sky-900/60"
+        className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left hover:bg-sky-100/70 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring dark:hover:bg-sky-900/60"
       >
         <CollectionGlyph icon={collection.icon} color={collection.color} className="h-4 w-4" />
         <span className="min-w-0 flex-1 truncate text-sm font-semibold">
@@ -179,14 +189,23 @@ function PinnedStrip({
       </button>
       {expanded && (
         <div className="border-t border-sky-200 px-3 py-3 dark:border-sky-900">
-          <p className="max-h-40 overflow-y-auto whitespace-pre-wrap pr-1 text-sm leading-5 text-sky-900/85 dark:text-sky-100/80">
+          <p
+            ref={noteRef}
+            {...(overflows && {
+              // Scrolls: reachable and scrollable from the keyboard.
+              role: "region",
+              "aria-label": `Note for ${collection.name}`,
+              tabIndex: 0,
+            })}
+            className="max-h-40 overflow-y-auto whitespace-pre-wrap rounded pr-1 text-sm leading-5 text-sky-900/85 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:text-sky-100/80"
+          >
             {noteText}
           </p>
           <div className="mt-3 flex flex-wrap items-center gap-2">
             <button
               type="button"
               onClick={onViewFull}
-              className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-500"
+              className="inline-flex items-center gap-1 rounded-md bg-sky-700 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               <BookOpen className="h-3 w-3" />
               View full note
@@ -194,14 +213,14 @@ function PinnedStrip({
             <button
               type="button"
               onClick={onEdit}
-              className="inline-flex items-center gap-1 rounded-md border border-sky-300 bg-white/70 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200 dark:hover:bg-sky-900"
+              className="inline-flex items-center gap-1 rounded-md border border-sky-300 bg-white/70 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200 dark:hover:bg-sky-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
             >
               Edit
             </button>
             <button
               type="button"
               onClick={onOpenWeb}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900"
+              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:text-sky-300 dark:hover:bg-sky-900"
             >
               Open in web
               <ExternalLink className="h-3 w-3" />
@@ -232,7 +251,7 @@ function FullPageReader({
         <button
           type="button"
           onClick={onBack}
-          className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-50"
+          className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-50"
           aria-label="Back to note preview"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -240,25 +259,30 @@ function FullPageReader({
         <CollectionGlyph icon={collection.icon} color={collection.color} className="h-4 w-4" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{collection.name}</p>
-          <p className="text-xs text-neutral-500">Collection note</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">Collection note</p>
         </div>
         <button
           type="button"
           onClick={onEdit}
-          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90"
+          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Edit
         </button>
         <button
           type="button"
           onClick={onOpenWeb}
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          className="inline-flex min-h-6 items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-900"
           aria-label="Open note in bookmark.land"
         >
           <ExternalLink className="h-3 w-3" />
         </button>
       </header>
-      <article className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
+      <article
+        // Scrolls: reachable and scrollable from the keyboard.
+        tabIndex={0}
+        aria-label={`Note for ${collection.name}`}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      >
         <div className="mx-auto max-w-prose">
           <p className="whitespace-pre-wrap text-sm leading-6 text-neutral-700 dark:text-neutral-200">
             {noteText}

@@ -1,14 +1,19 @@
-import { useRef, type RefObject } from "react";
+import { useEffect, useRef, useState, type RefObject } from "react";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import {
   clampTreeHeight,
+  dividerPercents,
   RESIZE_STEP,
   TREE_HEIGHT_KEY,
 } from "@/utils/panel-layout";
 
+const STEP_BUTTON =
+  "flex h-6 w-6 items-center justify-center rounded border border-neutral-300 bg-white text-neutral-600 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:opacity-50 dark:border-neutral-700 dark:bg-neutral-900 dark:text-neutral-300 dark:hover:bg-neutral-800";
+
 /**
  * Draggable separator between the collection tree and the bookmark list.
- * Drag (or use Arrow Up/Down when focused) to resize; the height persists
- * across panel opens via localStorage.
+ * Drag, use Arrow Up/Down when focused, or press its two buttons to resize;
+ * the height persists across panel opens via localStorage.
  */
 export function PanelDivider({
   treeRef,
@@ -39,43 +44,102 @@ export function PanelDivider({
     }
   };
 
+  const step = (delta: number) => {
+    const { treeStart, listStart } = measure();
+    apply(clampTreeHeight(treeStart + delta, treeStart, listStart));
+    persist();
+  };
+
+  // The separator's value follows the two sections however they change size
+  // (a drag, the window, the tree's content).
+  const [value, setValue] = useState({ now: 0, min: 0, max: 100 });
+  useEffect(() => {
+    const tree = treeRef.current;
+    const list = listRef.current;
+    if (!tree || !list) return;
+    const update = () => {
+      const next = dividerPercents(
+        tree.getBoundingClientRect().height,
+        list.getBoundingClientRect().height,
+        window.innerHeight,
+      );
+      setValue((previous) =>
+        previous.now === next.now && previous.min === next.min && previous.max === next.max
+          ? previous
+          : next,
+      );
+    };
+    const observer = new ResizeObserver(update);
+    observer.observe(tree);
+    observer.observe(list);
+    return () => observer.disconnect();
+  }, [treeRef, listRef]);
+
   return (
-    <div
-      role="separator"
-      aria-orientation="horizontal"
-      aria-label="Resize collections panel"
-      title="Drag to resize"
-      tabIndex={0}
-      onPointerDown={(e) => {
-        e.preventDefault();
-        e.currentTarget.setPointerCapture(e.pointerId);
-        drag.current = { startY: e.clientY, ...measure() };
-      }}
-      onPointerMove={(e) => {
-        if (!drag.current) return;
-        const { startY, treeStart, listStart } = drag.current;
-        apply(
-          clampTreeHeight(treeStart + e.clientY - startY, treeStart, listStart),
-        );
-      }}
-      onPointerUp={(e) => {
-        drag.current = null;
-        e.currentTarget.releasePointerCapture(e.pointerId);
-        persist();
-      }}
-      onPointerCancel={() => {
-        drag.current = null;
-        persist();
-      }}
-      onKeyDown={(e) => {
-        if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
-        e.preventDefault();
-        const { treeStart, listStart } = measure();
-        const delta = e.key === "ArrowUp" ? -RESIZE_STEP : RESIZE_STEP;
-        apply(clampTreeHeight(treeStart + delta, treeStart, listStart));
-        persist();
-      }}
-      className="h-1.5 shrink-0 cursor-row-resize bg-neutral-200 hover:bg-neutral-300 focus-visible:outline-2 focus-visible:outline-ring dark:bg-neutral-800 dark:hover:bg-neutral-700"
-    />
+    // 24 px tall so the line's hit area and the two buttons never cover a row.
+    <div className="group relative h-6 shrink-0">
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 bg-neutral-200 group-hover:bg-neutral-300 dark:bg-neutral-800 dark:group-hover:bg-neutral-700" />
+      <div
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="Resize collections panel"
+        aria-valuenow={value.now}
+        aria-valuemin={value.min}
+        aria-valuemax={value.max}
+        aria-valuetext={`Collections take ${value.now}% of the panel`}
+        title="Drag to resize"
+        tabIndex={0}
+        onPointerDown={(e) => {
+          e.preventDefault();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          drag.current = { startY: e.clientY, ...measure() };
+        }}
+        onPointerMove={(e) => {
+          if (!drag.current) return;
+          const { startY, treeStart, listStart } = drag.current;
+          apply(
+            clampTreeHeight(treeStart + e.clientY - startY, treeStart, listStart),
+          );
+        }}
+        onPointerUp={(e) => {
+          drag.current = null;
+          e.currentTarget.releasePointerCapture(e.pointerId);
+          persist();
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+          persist();
+        }}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+          e.preventDefault();
+          step(e.key === "ArrowUp" ? -RESIZE_STEP : RESIZE_STEP);
+        }}
+        // The ring is drawn inside: the area spans the panel, so an outer ring would be cut off.
+        className="absolute inset-0 cursor-row-resize focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      />
+      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 gap-1">
+        <button
+          type="button"
+          aria-label="Show more collections"
+          title="Show more collections"
+          aria-disabled={value.now >= value.max}
+          onClick={() => step(RESIZE_STEP)}
+          className={STEP_BUTTON}
+        >
+          <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          aria-label="Show fewer collections"
+          title="Show fewer collections"
+          aria-disabled={value.now <= value.min}
+          onClick={() => step(-RESIZE_STEP)}
+          className={STEP_BUTTON}
+        >
+          <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+        </button>
+      </div>
+    </div>
   );
 }

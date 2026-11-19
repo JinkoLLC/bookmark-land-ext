@@ -79,6 +79,14 @@ export function CollectionNoteEditor({
     ],
     content: initialHtml,
     editable: true,
+    editorProps: {
+      // The editable area has no role of its own, and a name needs one.
+      attributes: {
+        role: "textbox",
+        "aria-multiline": "true",
+        "aria-label": `Note for ${collectionName}`,
+      },
+    },
     onUpdate: ({ editor: activeEditor }) => {
       setHtmlLength(normalizedHtml(activeEditor).length);
       setError(null);
@@ -118,7 +126,7 @@ export function CollectionNoteEditor({
     <section className="fixed inset-0 z-40 flex flex-col bg-neutral-50 text-neutral-950 dark:bg-neutral-950 dark:text-neutral-50">
       <header className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
         <p className="truncate text-sm font-semibold">{collectionName}</p>
-        <p className="text-xs text-neutral-500">Editing collection note</p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">Editing collection note</p>
       </header>
 
       <Toolbar editor={editor} />
@@ -138,7 +146,7 @@ export function CollectionNoteEditor({
       <footer className="flex items-center gap-2 border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
         <span
           className={`mr-auto text-xs ${
-            tooLong ? "font-semibold text-red-600 dark:text-red-400" : "text-neutral-500"
+            tooLong ? "font-semibold text-red-600 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400"
           }`}
         >
           {htmlLength.toLocaleString()} / {COLLECTION_NOTES_LIMIT.toLocaleString()}
@@ -147,7 +155,7 @@ export function CollectionNoteEditor({
           type="button"
           onClick={onCancel}
           disabled={isSaving}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-900"
         >
           Cancel
         </button>
@@ -155,7 +163,7 @@ export function CollectionNoteEditor({
           type="button"
           onClick={() => void save()}
           disabled={!editor || isSaving || tooLong}
-          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isSaving ? "Saving…" : "Save"}
         </button>
@@ -265,7 +273,7 @@ function ToolButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-md p-1.5 disabled:opacity-50 ${
+      className={`rounded-md p-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50 ${
         active
           ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-950"
           : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-900"

@@ -1,4 +1,11 @@
-import { useDeferredValue, useRef, useState, type RefObject } from "react";
+import {
+  useDeferredValue,
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type RefObject,
+} from "react";
 import { useAuth } from "@clerk/chrome-extension";
 import {
   useConvexAuth,
@@ -9,12 +16,17 @@ import {
 import { api } from "@convex/api";
 import type { Doc, Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
-import { buildTree, type TreeNode } from "../shared/tree";
+import { buildTree, flattenTree, type TreeNode } from "../shared/tree";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { useStalled } from "@/hooks/use-stalled";
 import { searchTermFor } from "@/utils/panel-search";
 import { parseStoredHeight, TREE_HEIGHT_KEY } from "@/utils/panel-layout";
-import { CollectionRow } from "@/components/collection-row";
+import { treeKeyAction, type TreeKeyItem } from "@/utils/tree-keys";
+import {
+  collectionMenuAt,
+  CollectionRow,
+  treeRowClass,
+} from "@/components/collection-row";
 import {
   CollectionContextMenu,
   type CollectionMenuState,
@@ -52,9 +64,10 @@ export function LibraryPanel() {
   });
 
   return (
-    <div className="flex h-screen flex-col text-sm text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
+    <main className="flex h-screen flex-col text-sm text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
+      <h1 className="sr-only">Library panel</h1>
       {state === "loading" && (
-        <p className="p-4 text-neutral-500">Loading…</p>
+        <p className="p-4 text-neutral-500 dark:text-neutral-400">Loading…</p>
       )}
       {state === "stalled" && (
         <div className="p-4">
@@ -67,7 +80,7 @@ export function LibraryPanel() {
           <PanelContent />
         </LibraryErrorBoundary>
       )}
-    </div>
+    </main>
   );
 }
 
@@ -83,7 +96,7 @@ function SignedOutPanel() {
       <button
         type="button"
         onClick={openSignIn}
-        className="self-start rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-ring"
+        className="self-start rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         Sign in to bookmark.land
       </button>
@@ -119,7 +132,7 @@ function PanelContent() {
           onChange={(e) => setSearchInput(e.target.value)}
           placeholder="Search your library…"
           aria-label="Search your library"
-          className="w-full rounded-md border border-neutral-300 bg-transparent px-2 py-1.5 focus-visible:outline-2 focus-visible:outline-ring dark:border-neutral-700"
+          className="w-full rounded-md border border-neutral-300 bg-transparent px-2 py-1.5 placeholder:text-neutral-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:placeholder:text-neutral-400"
         />
       </div>
       {term !== null ? (
@@ -158,55 +171,126 @@ function BrowseView({
   onSelect: (id: Id<"collections"> | null) => void;
   onToggle: (id: Id<"collections">, isExpanded: boolean) => void;
 }) {
-  const treeRef = useRef<HTMLElement>(null);
+  const treeRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
-  // null = default (content-sized up to 45%); a number = user-chosen height.
+  // null = default (content-sized up to a limit); a number = user-chosen height.
   const [treeHeight, setTreeHeight] = useState<number | null>(() =>
     parseStoredHeight(localStorage.getItem(TREE_HEIGHT_KEY)),
   );
   const [menu, setMenu] = useState<CollectionMenuState | null>(null);
+  const [hasBookmarks, setHasBookmarks] = useState(false);
+
+  // The tree is one Tab stop: the row focused last, or "All bookmarks" (null)
+  // when that row is no longer shown.
+  const [focused, setFocused] = useState<Id<"collections"> | null>(null);
+  const rows = flattenTree(tree);
+  const tabStop = rows.some(({ node }) => node._id === focused) ? focused : null;
+  const keyItems: TreeKeyItem[] = [
+    { depth: 0, hasChildren: false, isExpanded: false }, // "All bookmarks"
+    ...rows.map(({ node, depth }) => ({
+      depth,
+      hasChildren: node.children.length > 0,
+      isExpanded: node.isExpanded,
+    })),
+  ];
+  // Rows in display order; index 0 is "All bookmarks", index i is rows[i - 1].
+  const rowElements = (treeElement: HTMLElement) => [
+    ...treeElement.querySelectorAll<HTMLElement>('[role="treeitem"]'),
+  ];
+
+  const onTreeKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.altKey || e.ctrlKey || e.metaKey) return;
+    const elements = rowElements(e.currentTarget);
+    const action = treeKeyAction(
+      e.key,
+      e.shiftKey,
+      keyItems,
+      elements.indexOf(e.target as HTMLElement),
+    );
+    if (!action) return;
+    const node = rows[action.index - 1]?.node;
+    if (action.type === "focus") {
+      elements[action.index].focus();
+    } else if (action.type === "select") {
+      onSelect(node?._id ?? null);
+    } else if (!node) {
+      return; // "All bookmarks" has no menu and nothing to expand
+    } else if (action.type === "toggle") {
+      onToggle(node._id, action.isExpanded);
+    } else {
+      const rect = elements[action.index].getBoundingClientRect();
+      setMenu(collectionMenuAt(node, rect.left + 24, rect.bottom));
+    }
+    e.preventDefault();
+  };
 
   return (
     <>
-      <nav
+      <div
         ref={treeRef}
         style={
-          treeHeight === null
-            ? { maxHeight: "45%" }
-            : { height: treeHeight, maxHeight: "80%", flex: "none" }
+          treeHeight !== null
+            ? { height: treeHeight, maxHeight: "80%", flex: "none" }
+            : // Bookmarks to show: the tree takes what it needs, up to a third
+              // of the panel and never more than 200 px.
+              { maxHeight: hasBookmarks ? "min(33.333%, 200px)" : "45%" }
         }
         className="overflow-y-auto p-2"
       >
-        <button
-          type="button"
-          onClick={() => onSelect(null)}
-          className={`block w-full rounded px-2 py-1 text-left hover:bg-neutral-100 dark:hover:bg-neutral-800 ${selected === null ? "bg-neutral-100 font-medium dark:bg-neutral-800" : ""}`}
+        <div
+          role="tree"
+          aria-label="Collections"
+          onKeyDown={onTreeKeyDown}
+          onFocus={(e) => {
+            const index = rowElements(e.currentTarget).indexOf(e.target as HTMLElement);
+            if (index >= 0) setFocused(rows[index - 1]?.node._id ?? null);
+          }}
         >
-          All bookmarks
-        </button>
-        {loading ? (
-          <p className="px-2 py-1 text-neutral-500">Loading collections…</p>
-        ) : (
-          tree.map((node) => (
-            <CollectionRow
-              key={node._id}
-              node={node}
-              selected={selected}
-              onSelect={onSelect}
-              onToggle={onToggle}
-              onMenu={setMenu}
-            />
-          ))
+          <div
+            role="treeitem"
+            aria-level={1}
+            aria-selected={selected === null}
+            tabIndex={tabStop === null ? 0 : -1}
+            onClick={() => onSelect(null)}
+            className={`${treeRowClass(selected === null)} px-2`}
+          >
+            All bookmarks
+          </div>
+          {!loading &&
+            tree.map((node) => (
+              <CollectionRow
+                key={node._id}
+                node={node}
+                selected={selected}
+                tabStop={tabStop}
+                onSelect={onSelect}
+                onToggle={onToggle}
+                onMenu={setMenu}
+              />
+            ))}
+        </div>
+        {loading && (
+          <p className="px-2 py-1 text-neutral-500 dark:text-neutral-400">
+            Loading collections…
+          </p>
         )}
-      </nav>
+      </div>
       <PanelDivider treeRef={treeRef} listRef={listRef} onResize={setTreeHeight} />
       <CollectionNotesPanel
         collection={selectedCollection}
         canAddNotes={canAddCollectionNotes}
       />
-      <BookmarkList collectionId={selected ?? undefined} listRef={listRef} />
+      <BookmarkList
+        collectionId={selected ?? undefined}
+        listRef={listRef}
+        onHasRows={setHasBookmarks}
+      />
       {menu && (
-        <CollectionContextMenu menu={menu} onClose={() => setMenu(null)} />
+        <CollectionContextMenu
+          key={menu.id}
+          menu={menu}
+          onClose={() => setMenu(null)}
+        />
       )}
     </>
   );
@@ -220,10 +304,10 @@ function SearchResults({ term }: { term: string }) {
   return (
     <div className="flex-1 overflow-y-auto p-2">
       {results === undefined && (
-        <p className="px-2 text-neutral-500">Searching…</p>
+        <p className="px-2 text-neutral-500 dark:text-neutral-400">Searching…</p>
       )}
       {results !== undefined && results.length === 0 && (
-        <p className="px-2 text-neutral-500">No results for “{term}”.</p>
+        <p className="px-2 text-neutral-500 dark:text-neutral-400">No results for “{term}”.</p>
       )}
       {(results ?? []).map((row) => (
         <BookmarkRow
@@ -241,9 +325,12 @@ function SearchResults({ term }: { term: string }) {
 function BookmarkList({
   collectionId,
   listRef,
+  onHasRows,
 }: {
   collectionId?: Id<"collections">;
   listRef?: RefObject<HTMLDivElement | null>;
+  /** Reports whether the open collection has bookmarks, once that is known. */
+  onHasRows: (hasRows: boolean) => void;
 }) {
   const { results, status, loadMore } = usePaginatedQuery(
     api.bookmarks.list,
@@ -254,13 +341,19 @@ function BookmarkList({
   // One Site security box open at a time.
   const [openRisk, setOpenRisk] = useState<string | null>(null);
 
+  const hasRows = status === "LoadingFirstPage" ? null : results.length > 0;
+  useEffect(() => {
+    // Not while loading: the tree would jump on every collection switch.
+    if (hasRows !== null) onHasRows(hasRows);
+  }, [hasRows, onHasRows]);
+
   return (
     <div ref={listRef} className="flex-1 overflow-y-auto p-2">
       {status === "LoadingFirstPage" && (
-        <p className="px-2 text-neutral-500">Loading bookmarks…</p>
+        <p className="px-2 text-neutral-500 dark:text-neutral-400">Loading bookmarks…</p>
       )}
       {status !== "LoadingFirstPage" && results.length === 0 && (
-        <p className="px-2 text-neutral-500">No bookmarks here yet.</p>
+        <p className="px-2 text-neutral-500 dark:text-neutral-400">No bookmarks here yet.</p>
       )}
       {results.map((row) => (
         <BookmarkRow
@@ -275,13 +368,13 @@ function BookmarkList({
         <button
           type="button"
           onClick={() => loadMore(PAGE_SIZE)}
-          className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-1.5 font-medium hover:bg-neutral-50 dark:border-neutral-700 dark:hover:bg-neutral-800"
+          className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-1.5 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
         >
           Load more
         </button>
       )}
       {status === "LoadingMore" && (
-        <p className="px-2 py-1 text-neutral-500">Loading…</p>
+        <p className="px-2 py-1 text-neutral-500 dark:text-neutral-400">Loading…</p>
       )}
     </div>
   );
@@ -313,7 +406,7 @@ function BookmarkRow({
         <button
           type="button"
           onClick={() => void browser.tabs.create({ url: row.url })}
-          className="flex min-w-0 flex-1 items-center gap-2 px-2 py-1.5 text-left"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           title={row.url}
         >
           {row.favicon ? (
@@ -323,7 +416,7 @@ function BookmarkRow({
           )}
           <span className="min-w-0 flex-1">
             <span className="block truncate">{row.title}</span>
-            <span className="block truncate text-neutral-500">{row.domain}</span>
+            <span className="block truncate text-neutral-500 dark:text-neutral-400">{row.domain}</span>
           </span>
           {row.isFavorite && <span aria-label="Favorite">★</span>}
         </button>

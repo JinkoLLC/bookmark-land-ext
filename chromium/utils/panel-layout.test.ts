@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   clampTreeHeight,
+  dividerPercents,
   menuPosition,
   parseStoredHeight,
   MENU_HEIGHT,
@@ -26,6 +27,17 @@ describe("clampTreeHeight", () => {
 
   it("prefers the tree minimum when the panel is too small for both", () => {
     expect(clampTreeHeight(150, 60, 100)).toBe(MIN_TREE_HEIGHT);
+  });
+});
+
+describe("dividerPercents", () => {
+  it("reports the tree and its resize range as percentages of the panel", () => {
+    // 800 px panel: tree 200, list 440 → the tree can grow to 520.
+    expect(dividerPercents(200, 440, 800)).toEqual({ now: 25, min: 10, max: 65 });
+  });
+
+  it("keeps the value inside the range for a tree shorter than the minimum", () => {
+    expect(dividerPercents(44, 600, 800)).toEqual({ now: 10, min: 10, max: 66 });
   });
 });
 
