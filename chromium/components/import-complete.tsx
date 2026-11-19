@@ -1,13 +1,22 @@
-import type { CSSProperties } from "react";
+import { useEffect, useRef, type CSSProperties } from "react";
 import { browser } from "wxt/browser";
-import { ArrowRight, FolderOpen, PartyPopper } from "lucide-react";
+import { ArrowRight, Check, CircleAlert, FolderOpen, PartyPopper } from "lucide-react";
 import {
-  importAddedAnything,
+  formatCount,
+  importCounts,
+  importHeading,
   importLinks,
+  importOutcome,
+  importSubtext,
+  sampleTitle,
   type ImportResult,
 } from "@/utils/import-result";
 
 const SAMPLE_SIZE = 8;
+
+const FOCUS_RING =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const OUTLINE_BUTTON = `inline-flex min-h-6 items-center rounded-full border border-neutral-300 px-4 py-2 font-semibold transition hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800 ${FOCUS_RING}`;
 
 const openWebPath = (path: string) =>
   void browser.tabs.create({ url: `${import.meta.env.WXT_WEB_APP_URL}${path}` });
@@ -20,27 +29,40 @@ const hostOf = (url: string) => {
   }
 };
 
+const ICONS = {
+  imported: PartyPopper,
+  partial: Check,
+  "already-here": Check,
+  nothing: CircleAlert,
+};
+
 /**
- * The Browser import's last screen: a celebration when bookmarks came over
- * (confetti, the count, a peek at what arrived, links to the new
- * collections), or a calm note when everything was already saved.
+ * The Browser import's last screen: a celebration when everything picked
+ * came over (confetti, the count, a peek at what arrived, links to the new
+ * collections), and a plain account of it when some or all did not.
  */
 export function ImportComplete({
   result,
   sample,
+  planLimit = null,
   returnTabId = null,
   onImportMore,
 }: {
   result: ImportResult;
   /** The selection in tree order; may include ones that were duplicates. */
   sample: { url: string; title?: string }[];
+  /** The plan's bookmark limit, when the library reached it and that explains the skips. */
+  planLimit?: number | null;
   /** The bookmark.land setup tab that opened this import; the main button returns there. */
   returnTabId?: number | null;
   onImportMore: () => void;
 }) {
   const links = importLinks(result);
-  const festive = importAddedAnything(result);
-  const libraryPath = festive ? links.primaryPath : "/dashboard";
+  const outcome = importOutcome(result);
+  const added = result.imported + result.restored;
+  const festive = outcome === "imported";
+  const Icon = ICONS[outcome];
+  const libraryPath = added > 0 ? links.primaryPath : "/dashboard";
   // The setup tab may have been closed since: then this is the usual "open the library".
   const backToSetup = async (tabId: number) => {
     try {
@@ -52,71 +74,70 @@ export function ImportComplete({
       openWebPath(libraryPath);
     }
   };
-  const added = result.imported + result.restored;
   const shown = sample.slice(0, Math.min(SAMPLE_SIZE, added));
-  // With duplicates in the selection the sample may list a few that were
-  // already saved, so it is labelled as the selection rather than the result.
-  const sampleTitle = result.duplicates > 0 ? "Some of what you picked" : "Some of what came over";
+  const title = sampleTitle(result);
+  const counts = importCounts(result);
+
+  // The outcome is read first, by sighted and screen-reader users alike.
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), []);
 
   return (
-    <div className="relative flex flex-col gap-5 overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-b from-emerald-50 to-white p-6 shadow-sm dark:border-emerald-900/60 dark:from-emerald-950/50 dark:to-slate-950/60">
+    <div className="relative flex min-w-0 flex-col gap-5 overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-b from-emerald-50 to-white p-4 shadow-sm sm:p-6 dark:border-emerald-900/60 dark:from-emerald-950/50 dark:to-slate-950/60">
       {festive && <ConfettiBurst />}
 
       <div className="relative text-center">
-        <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full bg-emerald-600 text-white shadow-lg shadow-emerald-900/25">
-          <PartyPopper className="h-7 w-7" aria-hidden="true" />
+        <div
+          className={`mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-full text-white shadow-lg shadow-emerald-900/25 ${
+            outcome === "nothing" ? "bg-slate-600" : "bg-emerald-700"
+          }`}
+        >
+          <Icon className="h-7 w-7" aria-hidden="true" />
         </div>
-        {festive ? (
-          <>
-            <h2 className="text-3xl font-extrabold tracking-tight text-emerald-950 dark:text-emerald-50">
-              {added} bookmark{added === 1 ? "" : "s"} imported!
-            </h2>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Your library just grew. Everything is searchable on bookmark.land
-              and in the side panel.
-            </p>
-          </>
-        ) : (
-          <>
-            <h2 className="text-2xl font-bold text-emerald-950 dark:text-emerald-50">
-              Already all here
-            </h2>
-            <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">
-              Every bookmark you picked was already in your library, so nothing
-              new was added.
-            </p>
-          </>
-        )}
+        <h2
+          ref={heading}
+          tabIndex={-1}
+          className={`rounded-lg font-extrabold tracking-tight break-words text-emerald-950 dark:text-emerald-50 ${FOCUS_RING} ${
+            festive ? "text-3xl" : "text-2xl"
+          }`}
+        >
+          {importHeading(result)}
+        </h2>
+        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{importSubtext(result)}</p>
       </div>
 
-      <CountsLine result={result} />
+      {counts.length > 0 && (
+        <p className="relative text-center text-sm text-slate-600 dark:text-slate-300">
+          {counts.join(" · ")}
+        </p>
+      )}
 
-      {festive && shown.length > 0 && (
-        <section aria-label={sampleTitle} className="relative">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
-            {sampleTitle}
+      {shown.length > 0 && (
+        <section aria-label={title} className="relative min-w-0">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
+            {title}
           </h3>
           <ul className="divide-y divide-emerald-100 overflow-hidden rounded-xl border border-emerald-100 bg-white/80 dark:divide-emerald-900/50 dark:border-emerald-900/60 dark:bg-slate-900/70">
             {shown.map((b) => (
               <li key={b.url} className="flex min-w-0 items-baseline gap-2 px-3 py-2 text-sm">
                 <span className="truncate font-medium">{b.title?.trim() || hostOf(b.url)}</span>
-                <span className="shrink-0 text-xs text-slate-500 dark:text-slate-400">
+                <span className="max-w-[45%] shrink-0 truncate text-xs text-slate-600 dark:text-slate-300">
                   {hostOf(b.url)}
                 </span>
               </li>
             ))}
           </ul>
           {added > shown.length && (
-            <p className="mt-1.5 px-1 text-xs text-slate-500 dark:text-slate-400">
-              +{added - shown.length} more
+            <p className="mt-1.5 px-1 text-xs text-slate-600 dark:text-slate-300">
+              +{formatCount(added - shown.length)} more
             </p>
           )}
         </section>
       )}
 
       {links.collections.length > 1 && (
-        <section aria-label="Your new collections" className="relative">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+        <section aria-label="Your new collections" className="relative min-w-0">
+          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
             Your new collections
           </h3>
           <div className="flex flex-wrap gap-2">
@@ -125,14 +146,20 @@ export function ImportComplete({
                 key={c.path}
                 type="button"
                 onClick={() => openWebPath(c.path)}
-                className="inline-flex items-center gap-1.5 rounded-full border border-emerald-200 bg-white/85 px-3 py-1.5 text-sm font-medium text-emerald-900 transition hover:border-emerald-400 hover:bg-emerald-50 focus-visible:outline-2 focus-visible:outline-ring dark:border-emerald-800 dark:bg-slate-900/70 dark:text-emerald-100 dark:hover:bg-emerald-950/60"
+                className={`inline-flex max-w-full items-center gap-1.5 rounded-full border border-emerald-200 bg-white/85 px-3 py-1.5 text-sm font-medium text-emerald-900 transition hover:border-emerald-400 hover:bg-emerald-50 dark:border-emerald-800 dark:bg-slate-900/70 dark:text-emerald-100 dark:hover:bg-emerald-950/60 ${FOCUS_RING}`}
               >
-                <FolderOpen className="h-3.5 w-3.5" aria-hidden="true" />
-                {c.name}
+                <FolderOpen className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="truncate">{c.name}</span>
               </button>
             ))}
           </div>
         </section>
+      )}
+
+      {planLimit !== null && (
+        <p className="relative text-sm text-slate-700 dark:text-slate-200">
+          Your plan&apos;s limit of {formatCount(planLimit)} bookmarks was reached.
+        </p>
       )}
 
       {returnTabId !== null && (
@@ -144,43 +171,32 @@ export function ImportComplete({
       <div className="relative flex flex-wrap items-center gap-3">
         <button
           type="button"
-          autoFocus
           onClick={() =>
             returnTabId !== null ? void backToSetup(returnTabId) : openWebPath(libraryPath)
           }
-          className="inline-flex items-center gap-2 rounded-full bg-emerald-600 px-5 py-2.5 font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:-translate-y-0.5 hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-ring"
+          className={`inline-flex max-w-full items-center gap-2 rounded-full bg-emerald-700 px-5 py-2.5 text-left font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:bg-emerald-800 motion-safe:hover:-translate-y-0.5 ${FOCUS_RING}`}
         >
           {returnTabId !== null
             ? "Back to setup"
-            : festive
-              ? "See my imported bookmarks on bookmark.land"
+            : added > 0
+              ? "See my imported bookmarks"
               : "Open my library"}
-          <ArrowRight className="h-4 w-4" aria-hidden="true" />
+          <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
+        {planLimit !== null && (
+          <button type="button" onClick={() => openWebPath("/settings")} className={OUTLINE_BUTTON}>
+            Upgrade
+          </button>
+        )}
         <button
           type="button"
           onClick={onImportMore}
-          className="text-sm font-medium text-emerald-800 underline-offset-4 hover:underline dark:text-emerald-200"
+          className={`inline-flex min-h-6 items-center rounded px-1 text-sm font-medium text-emerald-800 underline-offset-4 hover:underline dark:text-emerald-200 ${FOCUS_RING}`}
         >
           Import more
         </button>
       </div>
     </div>
-  );
-}
-
-function CountsLine({ result }: { result: ImportResult }) {
-  const parts = [
-    result.imported > 0 && `${result.imported} new`,
-    result.restored > 0 && `${result.restored} restored from Trash`,
-    result.duplicates > 0 && `${result.duplicates} already in your library`,
-    result.skipped > 0 && `${result.skipped} skipped (plan limit or error)`,
-  ].filter(Boolean);
-  if (parts.length === 0) return null;
-  return (
-    <p className="relative text-center text-sm text-slate-600 dark:text-slate-300">
-      {parts.join(" · ")}
-    </p>
   );
 }
 

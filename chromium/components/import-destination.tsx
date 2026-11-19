@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { pageFeedNote, type CollectionOption } from "@/utils/organize";
 import {
+  collectionWithPath,
   importedCollectionName,
   type ImportDestination,
 } from "@/utils/import-destination";
@@ -26,11 +27,9 @@ export function DestinationPicker({
   loading?: boolean;
   disabled?: boolean;
 }) {
+  const chosen = value.kind === "existing" ? collectionWithPath(options, value.id) : null;
   return (
-    <fieldset
-      disabled={disabled}
-      className="disabled:opacity-50"
-    >
+    <fieldset disabled={disabled}>
       <legend className="sr-only">Import into</legend>
       <div className="flex flex-col gap-2">
         <Choice
@@ -51,7 +50,7 @@ export function DestinationPicker({
               onChange={(e) =>
                 onChange({ kind: "existing", id: e.target.value || undefined })
               }
-              className="mt-2 w-full rounded-xl border border-emerald-100 bg-white/85 px-3 py-2 text-sm shadow-sm outline-none focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200 dark:border-emerald-900/70 dark:bg-slate-950/80 dark:focus:ring-emerald-900"
+              className="mt-2 w-full rounded-xl border border-emerald-100 bg-white/85 px-3 py-2 text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-emerald-900/70 dark:bg-slate-950/80"
             >
               <option value="">
                 {loading ? "Loading collections…" : "Choose a collection…"}
@@ -62,6 +61,13 @@ export function DestinationPicker({
                 </option>
               ))}
             </select>
+            {chosen && (
+              // The native select cuts a long name; here it is in full, with where it sits.
+              <p className="mt-1.5 break-words text-sm text-slate-600 dark:text-slate-300">
+                {chosen.name}
+                {chosen.path && <span className="block text-xs">in {chosen.path}</span>}
+              </p>
+            )}
             {pageFeedNote(onPage.get(value.id ?? ""), "import") && (
               <p role="note" className="mt-2 text-sm text-slate-700 dark:text-slate-300">
                 {pageFeedNote(onPage.get(value.id ?? ""), "import")}
@@ -84,7 +90,7 @@ export function DestinationPicker({
               autoFocus
               placeholder="Collection name"
               onChange={(e) => onChange({ kind: "new", name: e.target.value })}
-              className="mt-2 w-full rounded-xl border border-emerald-100 bg-white/85 px-3 py-2 text-sm shadow-sm outline-none placeholder:text-slate-400 focus:border-emerald-400 focus:ring-2 focus:ring-emerald-200 dark:border-emerald-900/70 dark:bg-slate-950/80 dark:focus:ring-emerald-900"
+              className="mt-2 w-full rounded-xl border border-emerald-100 bg-white/85 px-3 py-2 text-sm shadow-sm placeholder:text-slate-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-emerald-900/70 dark:bg-slate-950/80 dark:placeholder:text-slate-400"
             />
           )}
         </Choice>
@@ -118,9 +124,9 @@ function Choice({
           name="import-destination"
           checked={checked}
           onChange={onSelect}
-          className="h-4 w-4 accent-emerald-600"
+          className="h-4 w-4 shrink-0 accent-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         />
-        <span className="font-medium">{label}</span>
+        <span className="min-w-0 break-words font-medium">{label}</span>
       </label>
       {children && <div className="pl-7">{children}</div>}
     </div>

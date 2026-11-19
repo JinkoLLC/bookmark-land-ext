@@ -3,6 +3,7 @@ import {
   destinationArgFor,
   destinationBaseDepth,
   importedCollectionName,
+  collectionWithPath,
 } from "./import-destination";
 
 const depths: Record<string, number> = { top: 0, nested: 2, deepest: 4 };
@@ -52,5 +53,26 @@ describe("destinationArgFor", () => {
   it("returns null while the choice is incomplete", () => {
     expect(destinationArgFor({ kind: "new", name: "   " })).toBeNull();
     expect(destinationArgFor({ kind: "existing" })).toBeNull();
+  });
+});
+
+describe("collectionWithPath", () => {
+  const options = [
+    { id: "a", name: "Research", depth: 0 },
+    { id: "b", name: "Policy", depth: 1 },
+    { id: "c", name: "Grid storage", depth: 2 },
+    { id: "d", name: "Typography", depth: 1 },
+    { id: "e", name: "Engineering", depth: 0 },
+  ];
+
+  it("gives the parents of a nested collection, outermost first", () => {
+    expect(collectionWithPath(options, "c")).toEqual({ name: "Grid storage", path: "Research / Policy" });
+    // A sibling's subtree in between is not an ancestor.
+    expect(collectionWithPath(options, "d")).toEqual({ name: "Typography", path: "Research" });
+  });
+
+  it("has no path at the top level and nothing for an unknown id", () => {
+    expect(collectionWithPath(options, "e")).toEqual({ name: "Engineering", path: "" });
+    expect(collectionWithPath(options, undefined)).toBeNull();
   });
 });

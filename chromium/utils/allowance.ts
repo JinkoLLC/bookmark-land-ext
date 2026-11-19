@@ -3,12 +3,11 @@
  * summary's bookmark count includes trashed items (they hold quota), so
  * remaining = limit - count. The import proceeds even when over — it fills
  * the allowance depth-first and skips the rest — so the warning informs, it
- * never blocks.
+ * never blocks. It gives the room left and no skip count: duplicates and
+ * restores from Trash use no room, so the count can't be known beforehand.
  */
 export interface AllowanceWarning {
   remaining: number;
-  willImport: number;
-  willSkip: number;
 }
 
 export function allowanceWarningFor(
@@ -18,9 +17,5 @@ export function allowanceWarningFor(
 ): AllowanceWarning | null {
   const remaining = Math.max(0, limit - bookmarkCount);
   if (importableCount <= remaining) return null;
-  return {
-    remaining,
-    willImport: remaining,
-    willSkip: importableCount - remaining,
-  };
+  return { remaining };
 }

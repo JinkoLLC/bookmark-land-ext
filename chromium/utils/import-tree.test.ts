@@ -109,6 +109,8 @@ describe("buildImportModel", () => {
       "d4",
     ]);
     expect(model.mergedFolderIds).toEqual(["d5", "d6"]);
+    // Each merged folder names the nearest kept folder above it.
+    expect(model.mergedInto).toEqual({ d5: "D4", d6: "D4" });
     const byUrl = Object.fromEntries(
       model.bookmarks.map((b) => [b.url, b.folderKey]),
     );
@@ -131,6 +133,7 @@ describe("buildImportModel", () => {
 
     expect(model.folders.map((f) => f.key)).toEqual(["d0", "d1", "d2", "d3"]);
     expect(model.mergedFolderIds).toEqual(["d4", "d5", "d6"]);
+    expect(model.mergedInto).toEqual({ d4: "D3", d5: "D3", d6: "D3" });
     const byUrl = Object.fromEntries(
       model.bookmarks.map((b) => [b.url, b.folderKey]),
     );
@@ -145,8 +148,10 @@ describe("buildImportModel", () => {
         folder("10", "Dev", [bm("101", "https://a.com/")]),
       ]),
     ];
-    const model = buildImportModel(roots, NONE, 5);
+    const model = buildImportModel(roots, NONE, 5, "Field trials");
     expect(model.folders).toEqual([]);
+    // Nothing is kept above them, so they merge straight into the destination.
+    expect(model.mergedInto).toEqual({ "1": "Field trials", "10": "Field trials" });
     // Loose and foldered bookmarks all fall through to the destination.
     expect(model.bookmarks.map((b) => b.folderKey)).toEqual([
       undefined,
@@ -155,6 +160,22 @@ describe("buildImportModel", () => {
     // Both the root (for its loose bookmark) and the folder show as merged.
     expect(model.mergedFolderIds).toEqual(["1", "10"]);
     expect(model.importableCount).toBe(2);
+  });
+
+  it("names both targets when a deep tree meets a deep destination", () => {
+    // Destination at depth 3 (baseDepth 4): only top-level folders are kept.
+    const roots = [
+      folder("1", "Bar", [
+        bm("100", "https://loose.com/"),
+        folder("10", "Dev", [
+          folder("11", "Frontend", [folder("12", "CSS", [bm("101", "https://a.com/")])]),
+        ]),
+      ]),
+    ];
+    const model = buildImportModel(roots, NONE, 4, "Field trials");
+    expect(model.folders.map((f) => f.name)).toEqual(["Bar", "Dev"]);
+    expect(model.mergedInto).toEqual({ "11": "Dev", "12": "Dev" });
+    expect(model.bookmarks.map((b) => b.folderKey)).toEqual(["root:1", "10"]);
   });
 
   it("baseDepth 0 leaves the root-import behavior unchanged", () => {

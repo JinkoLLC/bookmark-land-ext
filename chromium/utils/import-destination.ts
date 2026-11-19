@@ -69,3 +69,24 @@ export function destinationArgFor(
       return destination.id ? { type: "collection", id: destination.id } : null;
   }
 }
+
+/**
+ * A collection's name and its parent path ("Research / Grid storage"; empty
+ * at the top level), from the options in tree order with their depths.
+ */
+export function collectionWithPath(
+  options: { id: string; name: string; depth: number }[],
+  id: string | undefined,
+): { name: string; path: string } | null {
+  const index = options.findIndex((o) => o.id === id);
+  if (index < 0) return null;
+  const parents: string[] = [];
+  // Walking back, the first option at each shallower depth is an ancestor.
+  for (let i = index - 1, depth = options[index].depth; i >= 0 && depth > 0; i--) {
+    if (options[i].depth < depth) {
+      parents.unshift(options[i].name);
+      depth = options[i].depth;
+    }
+  }
+  return { name: options[index].name, path: parents.join(" / ") };
+}
