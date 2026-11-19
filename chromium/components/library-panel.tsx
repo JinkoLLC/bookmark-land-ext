@@ -16,6 +16,7 @@ import {
 import { api } from "@convex/api";
 import type { Doc, Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
+import { Globe } from "lucide-react";
 import { buildTree, flattenTree, type TreeNode } from "../shared/tree";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { useStalled } from "@/hooks/use-stalled";
@@ -96,7 +97,7 @@ function SignedOutPanel() {
       <button
         type="button"
         onClick={openSignIn}
-        className="self-start rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="self-start rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       >
         Sign in to bookmark.land
       </button>
@@ -412,7 +413,10 @@ function BookmarkRow({
           {row.favicon ? (
             <img src={row.favicon} alt="" className="h-4 w-4 shrink-0" />
           ) : (
-            <span className="h-4 w-4 shrink-0 rounded-sm bg-neutral-200 dark:bg-neutral-700" />
+            <Globe
+              className="h-4 w-4 shrink-0 text-neutral-500 dark:text-neutral-400"
+              aria-hidden="true"
+            />
           )}
           <span className="min-w-0 flex-1">
             <span className="block truncate">{row.title}</span>

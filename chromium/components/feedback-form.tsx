@@ -135,6 +135,8 @@ export function FeedbackForm({ onBack }: { onBack: () => void }) {
           maxLength={PRODUCT_FEEDBACK_MESSAGE_MAX_LENGTH}
           rows={5}
           autoFocus
+          // Keeps the placeholder out of the name.
+          aria-label="Message"
           placeholder="What would make bookmark.land better?"
           className={`${field} resize-y`}
         />
@@ -156,11 +158,17 @@ export function FeedbackForm({ onBack }: { onBack: () => void }) {
       <button
         type="submit"
         disabled={!canSubmit}
-        className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50"
+        aria-describedby={acknowledged ? undefined : "feedback-missing"}
+        className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground enabled:hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:bg-neutral-200 disabled:text-neutral-600 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-400"
       >
         {state === "pending" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
         {state === "pending" ? "Sending…" : "Send feedback"}
       </button>
+      {!acknowledged && (
+        <p id="feedback-missing" className={`-mt-2 text-xs ${MUTED}`}>
+          Tick the box above to send.
+        </p>
+      )}
     </form>
       </main>
     </>

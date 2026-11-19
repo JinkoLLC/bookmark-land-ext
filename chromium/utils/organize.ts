@@ -135,3 +135,7 @@ export function suggestTags(
   substring.sort();
   return [...prefix, ...substring].slice(0, limit);
 }
+
+/** The tag field after a tag was saved: cleared, unless the user has typed something newer since. */
+export const inputAfterTagSaved = (current: string, submitted: string): string =>
+  current === submitted ? "" : current;

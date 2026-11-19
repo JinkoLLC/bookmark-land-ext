@@ -17,7 +17,7 @@ const ITEM =
 
 /**
  * Menu for a collection row (right-click, the Menu key or Shift+F10).
- * "Manage Collection" opens the web app with that collection selected, where
+ * "Manage collection" opens the web app with that collection selected, where
  * the full management UI (rename, icon, share, delete…) lives.
  */
 export function CollectionContextMenu({
@@ -89,7 +89,7 @@ export function CollectionContextMenu({
           }
           className={ITEM}
         >
-          Manage Collection
+          Manage collection
         </button>
         {menu.publishedUrl && (
           <button

@@ -164,7 +164,7 @@ export function QuickSaveSection() {
             if (failure?.kind === "limit") openUpgrade();
             else void add();
           }}
-          className="rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:opacity-70"
+          className="rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:opacity-70"
         >
           {saving
             ? "Saving…"

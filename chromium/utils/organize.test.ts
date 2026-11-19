@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCollectionOptions, filterPickerRows, livePageCounts, pageFeedNote, pickerRows, suggestTags } from "./organize";
+import { buildCollectionOptions, filterPickerRows, inputAfterTagSaved, livePageCounts, pageFeedNote, pickerRows, suggestTags } from "./organize";
 
 describe("buildCollectionOptions", () => {
   const c = (
@@ -127,5 +127,12 @@ describe("pickerRows", () => {
     expect(filterPickerRows(rows, "unso").map((r) => r.name)).toEqual(["Unsorted"]);
     expect(filterPickerRows(rows, "zzz")).toEqual([]);
     expect(filterPickerRows(rows, "  ")).toBe(rows);
+  });
+});
+
+describe("inputAfterTagSaved", () => {
+  it("clears the saved draft but keeps a tag typed while it was saving", () => {
+    expect(inputAfterTagSaved("design", "design")).toBe("");
+    expect(inputAfterTagSaved("typography", "design")).toBe("typography");
   });
 });

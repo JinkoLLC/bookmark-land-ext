@@ -183,7 +183,7 @@ For Pro/Business accounts, selected collections show their note inline. Notes
 can be viewed, added, and edited directly in the side panel with the same basic
 rich-text schema as the web editor: bold, italic, headings, bullet/numbered
 lists, checklists, and links. The full web editor remains available from the
-"Open in web" / bookmark.land links for larger editing sessions.
+"Open in bookmark.land" / bookmark.land links for larger editing sessions.
 
 The manifest includes the `sidePanel` permission so the popup can open and host
 the Library panel.

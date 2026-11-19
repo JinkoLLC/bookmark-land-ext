@@ -79,6 +79,8 @@ export function CollectionNoteEditor({
     ],
     content: initialHtml,
     editable: true,
+    // The editor covers the panel: typing starts in it.
+    autofocus: "end",
     editorProps: {
       // The editable area has no role of its own, and a name needs one.
       attributes: {
@@ -123,7 +125,10 @@ export function CollectionNoteEditor({
   const tooLong = htmlLength > COLLECTION_NOTES_LIMIT;
 
   return (
-    <section className="fixed inset-0 z-40 flex flex-col bg-neutral-50 text-neutral-950 dark:bg-neutral-950 dark:text-neutral-50">
+    <section
+      data-note-view
+      className="fixed inset-0 z-40 flex flex-col bg-neutral-50 text-neutral-950 dark:bg-neutral-950 dark:text-neutral-50"
+    >
       <header className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
         <p className="truncate text-sm font-semibold">{collectionName}</p>
         <p className="text-xs text-neutral-500 dark:text-neutral-400">Editing collection note</p>
@@ -163,7 +168,7 @@ export function CollectionNoteEditor({
           type="button"
           onClick={() => void save()}
           disabled={!editor || isSaving || tooLong}
-          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isSaving ? "Saving…" : "Save"}
         </button>

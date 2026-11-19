@@ -166,7 +166,7 @@ export function AddPageButton() {
         tabIndex={-1}
         className={`${base} border border-neutral-300 dark:border-neutral-700`}
       >
-        <Check className="h-4 w-4 text-green-700 dark:text-green-400" aria-hidden="true" />
+        <Check className="h-4 w-4 text-primary" aria-hidden="true" />
         {status === "saved"
           ? "Saved to your library"
           : status === "restored"
@@ -183,7 +183,7 @@ export function AddPageButton() {
             url: `${import.meta.env.WXT_WEB_APP_URL}/settings`,
           })
         }
-        className={`${base} bg-primary text-primary-foreground hover:opacity-90`}
+        className={`${base} bg-primary text-primary-foreground hover:bg-primary-hover`}
       >
         Upgrade to save more
       </button>
@@ -195,7 +195,7 @@ export function AddPageButton() {
         type="button"
         onClick={() => void add()}
         disabled={saving}
-        className={`${base} bg-primary text-primary-foreground hover:opacity-90`}
+        className={`${base} bg-primary text-primary-foreground hover:bg-primary-hover`}
       >
         {saving ? (
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />

@@ -74,11 +74,8 @@ export function ImportWizard() {
               </p>
             </div>
 
-            {/* On a phone the three cards would push step 1 off the first screen. */}
-            <p className="mt-4 text-sm font-medium text-slate-700 sm:hidden dark:text-slate-200">
-              Folders stay organized, deep trees flatten safely, and nothing is
-              duplicated on re-import.
-            </p>
+            {/* On a phone the three cards would push step 1 off the first screen;
+                the intro above already covers them. */}
             <div className="mt-8 hidden gap-3 text-sm text-slate-700 sm:grid dark:text-slate-200">
               <ImportPromise icon="🌲" title="Folders stay organized" />
               <ImportPromise icon="⛰️" title="Deep trees flatten safely" />
@@ -152,7 +149,11 @@ function Wizard() {
   const [phase, setPhase] = useState<"preview" | "importing" | "done" | "failed">(
     "preview",
   );
-  const [summary, setSummary] = useState<ImportResult | null>(null);
+  // The result with the bookmarks that were sent for it: the selection can change afterwards.
+  const [summary, setSummary] = useState<{
+    result: ImportResult;
+    sent: { url: string; title?: string }[];
+  } | null>(null);
   const runImport = useAction(api.importTree.importTree);
   // Session summary — remaining allowance for the over-limit warning.
   const sessionSummary = useQuery(api.subscriptions.getSubscriptionInfo);
@@ -227,9 +228,9 @@ function Wizard() {
   if (phase === "done" && summary) {
     return (
       <ImportComplete
-        result={summary}
-        sample={model.bookmarks}
-        planLimit={reachedPlanLimit(summary, sessionSummary)}
+        result={summary.result}
+        sample={summary.sent}
+        planLimit={reachedPlanLimit(summary.result, sessionSummary)}
         returnTabId={parseReturnTabId(window.location.search)}
         onImportMore={() => {
           setSummary(null);
@@ -262,7 +263,7 @@ function Wizard() {
             ? { type: "collection", id: arg.id as Id<"collections"> }
             : arg,
       });
-      setSummary(result);
+      setSummary({ result, sent: model.bookmarks });
       setPhase("done");
     } catch (error) {
       console.error("[extension] Browser import failed", error);
@@ -293,7 +294,12 @@ function Wizard() {
           </p>
         )}
         {/* p-1: room for the checkboxes' focus ring inside the scroll box. */}
-        <div className="max-h-[26rem] space-y-2 overflow-y-auto p-1">
+        {/* Locked while importing, like the destination: the selection was already sent. */}
+        <fieldset
+          disabled={phase === "importing"}
+          aria-labelledby="import-step-1"
+          className="max-h-[26rem] min-w-0 space-y-2 overflow-y-auto p-1"
+        >
           {roots.map((root) => (
             <section
               key={root.id}
@@ -325,7 +331,7 @@ function Wizard() {
               </div>
             </section>
           ))}
-        </div>
+        </fieldset>
       </Step>
 
       <Step
@@ -403,8 +409,10 @@ function Wizard() {
       </Step>
 
       <p className="px-1 text-center text-xs text-slate-600 dark:text-slate-300">
-        {count} selected · {formatCount(model.folders.length)} folder
-        {model.folders.length === 1 ? "" : "s"}
+        {count} selected ·{" "}
+        {model.folders.length === 0 && !nothingSelected
+          ? `all folders merge into ${destinationName}`
+          : `${formatCount(model.folders.length)} new collection${model.folders.length === 1 ? "" : "s"}`}
         {model.excludedSchemeCount > 0 &&
           ` · ${formatCount(model.excludedSchemeCount)} left out (not web pages)`}
       </p>

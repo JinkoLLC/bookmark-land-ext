@@ -62,7 +62,6 @@ export function SiteRiskNotice({ risk }: { risk: SiteRisk }) {
   const amber = risk.riskLevel !== "possiblyAffected";
   return (
     <div
-      role="alert"
       className={`rounded-md border px-2.5 py-1.5 ${
         amber
           ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
@@ -71,7 +70,8 @@ export function SiteRiskNotice({ risk }: { risk: SiteRisk }) {
     >
       <div className="flex items-center gap-2">
         <ShieldAlert className={`h-5 w-5 shrink-0 ${colorFor(risk)}`} aria-hidden="true" />
-        <div className="min-w-0 flex-1">
+        {/* The alert is the warning's words only, not the button or the links under it. */}
+        <div role="alert" className="min-w-0 flex-1">
           <p className="font-semibold leading-[18px]">Security warning</p>
           <p className="text-xs opacity-80">{LEVEL_LABEL[risk.riskLevel]} site</p>
         </div>
