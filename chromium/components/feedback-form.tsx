@@ -2,8 +2,9 @@ import { useState, type FormEvent } from "react";
 import { useAction } from "convex/react";
 import { api } from "@convex/api";
 import { browser } from "wxt/browser";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { StatusLine } from "@/components/status-line";
+import { ViewHeader } from "@/components/view-header";
 import {
   PRODUCT_FEEDBACK_ACKNOWLEDGEMENT_TEXT,
   PRODUCT_FEEDBACK_MESSAGE_MAX_LENGTH,
@@ -61,19 +62,7 @@ export function FeedbackForm({ onBack }: { onBack: () => void }) {
     }
   };
 
-  const header = (
-    <header className="flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200 px-3 dark:border-neutral-800">
-      <button
-        type="button"
-        onClick={onBack}
-        aria-label="Back"
-        className="rounded-md p-1 text-neutral-600 hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:text-neutral-300 dark:hover:bg-neutral-800"
-      >
-        <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-      </button>
-      <h1 className="font-semibold">Send feedback</h1>
-    </header>
-  );
+  const header = <ViewHeader title="Send feedback" onBack={onBack} />;
 
   if (state === "success") {
     return (

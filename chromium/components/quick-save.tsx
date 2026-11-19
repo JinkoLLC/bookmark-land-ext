@@ -34,7 +34,12 @@ export function openUpgrade() {
  * the user adds it with an explicit click. Already-saved pages go straight
  * to edit mode. Once a save completes, closing the popup never undoes it.
  */
-export function QuickSaveSection() {
+export function QuickSaveSection({
+  onBookmark,
+}: {
+  /** Told which Bookmark the page is: null = none, undefined = still checking or saving. */
+  onBookmark?: (bookmarkId: string | null | undefined) => void;
+}) {
   // undefined = resolving; null = not a saveable page
   const [tab, setTab] = useState<TabInfo | null | undefined>(undefined);
   const [saveState, setSaveState] = useState<QuickSaveState | null>(null);
@@ -106,6 +111,12 @@ export function QuickSaveSection() {
       : flow && "bookmarkId" in flow
         ? flow.bookmarkId
         : null;
+
+  // A short link made from this popup is attached to the page's Bookmark, so
+  // the root waits for the check, and for a save in flight, to know it.
+  const unknown = tab === undefined || saving || (tab !== null && existing === undefined && !saveState);
+  const pageBookmark = unknown ? undefined : bookmarkId;
+  useEffect(() => onBookmark?.(pageBookmark), [onBookmark, pageBookmark]);
 
   return (
     <>

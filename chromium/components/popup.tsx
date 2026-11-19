@@ -6,6 +6,8 @@ import type { FunctionReturnType } from "convex/server";
 import { browser } from "wxt/browser";
 import { ExternalLink, LogOut, PanelRight, Settings, User } from "lucide-react";
 import { FeedbackForm } from "@/components/feedback-form";
+import { QrView } from "@/components/qr-view";
+import { ShortLinkView, useShortLink, type PageTab } from "@/components/short-link-view";
 import {
   getAccountEmailFromBackground,
   signOutFromBackground,
@@ -13,6 +15,7 @@ import {
 import { useStalled } from "@/hooks/use-stalled";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { moveIndex } from "@/utils/list-keys";
+import { parseAddress, refusedLocally } from "@/utils/short-link";
 import { QuickSaveSection } from "@/components/quick-save";
 import { PendingErrorBanner } from "@/components/pending-error";
 import { AuthStalled } from "@/components/auth-stalled";
@@ -62,11 +65,12 @@ export function Popup() {
         >
           <SignedInView />
         </LibraryErrorBoundary>
+      ) : state === "signed-out" ? (
+        <SignedOutView />
       ) : (
         <PlainView>
           {state === "loading" && <LoadingView />}
           {state === "stalled" && <AuthStalled />}
-          {state === "signed-out" && <SignedOutView />}
         </PlainView>
       )}
     </div>
@@ -111,6 +115,76 @@ function useSaveShortcut(): string | null {
   return shortcut;
 }
 
+/**
+ * The active tab when it is a web page (http or https, of any length): what
+ * the Short link / QR code row works on, read apart from Quick save's own
+ * check. undefined = resolving; null = not a web page.
+ */
+function usePageTab(): PageTab | null | undefined {
+  const [tab, setTab] = useState<PageTab | null | undefined>(undefined);
+  useEffect(() => {
+    void browser.tabs
+      .query({ active: true, currentWindow: true })
+      .then(([active]) => {
+        const address = parseAddress(active?.url);
+        setTab(active?.url && address ? { url: active.url, address, title: active.title } : null);
+      })
+      .catch(() => setTab(null));
+  }, []);
+  return tab;
+}
+
+type ViewName = "feedback" | "qr" | "short";
+
+/**
+ * Views that replace the popup's content (a popup can't host a dialog bigger
+ * than itself), as a stack: the Short link view can open from the QR view.
+ * What is underneath stays mounted, so Back returns to it as it was and to
+ * the control that opened the view.
+ */
+function useViews() {
+  const [stack, setStack] = useState<ViewName[]>([]);
+  const openers = useRef<(HTMLElement | null)[]>([]);
+  const returnTo = useRef<HTMLElement | null | undefined>(undefined);
+  const top = stack.at(-1);
+
+  const open = (view: ViewName) => {
+    openers.current.push(document.activeElement as HTMLElement | null);
+    setStack((now) => [...now, view]);
+  };
+  const back = () => {
+    returnTo.current = openers.current.pop() ?? null;
+    setStack((now) => now.slice(0, -1));
+  };
+
+  useEffect(() => {
+    const opener = returnTo.current;
+    if (opener === undefined) return;
+    returnTo.current = undefined;
+    // The opener is gone when short links closed to the account meanwhile:
+    // the QR code button, or the QR view's heading, stands in for it.
+    const target = opener?.isConnected
+      ? opener
+      : document.getElementById(top === "qr" ? "qr-heading" : "qr-code-button");
+    target?.focus();
+  }, [stack, top]);
+
+  // Escape leaves the QR code and Short link views, where the browser lets
+  // the popup see the key. Not the feedback form: it would drop a typed message.
+  useEffect(() => {
+    if (top !== "qr" && top !== "short") return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "Escape") return;
+      event.preventDefault();
+      back();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [top]);
+
+  return { stack, top, open, back };
+}
+
 function openBookmarkLand() {
   void browser.tabs.create({
     url: `${import.meta.env.WXT_WEB_APP_URL}/dashboard`,
@@ -140,26 +214,39 @@ function SignedOutView() {
   };
 
   const shortcut = useSaveShortcut();
+  const tab = usePageTab();
+  const views = useViews();
 
   return (
     <>
-      <p>Sign in to bookmark.land to start saving pages.</p>
-      <ul className={`list-disc space-y-1 pl-4 ${MUTED}`}>
-        <li>Click this icon, then <span className="font-medium text-neutral-700 dark:text-neutral-300">Save to bookmark.land</span>.</li>
-        {shortcut && (
-          <li>
-            Press <kbd className="rounded border border-neutral-300 px-1 font-mono text-xs dark:border-neutral-700">{shortcut}</kbd> to save instantly.
-          </li>
-        )}
-        <li>Right-click any page or link → Save to bookmark.land.</li>
-      </ul>
-      <button
-        type="button"
-        onClick={openSignIn}
-        className={`rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 ${RING}`}
-      >
-        Sign in to bookmark.land
-      </button>
+      {views.top === "qr" && tab && <QrView url={tab.url} onBack={views.back} canShorten={false} />}
+      <div className={views.top ? "hidden" : "contents"}>
+        <PlainView>
+          <p>Sign in to bookmark.land to start saving pages.</p>
+          <ul className={`list-disc space-y-1 pl-4 ${MUTED}`}>
+            <li>Click this icon, then <span className="font-medium text-neutral-700 dark:text-neutral-300">Save to bookmark.land</span>.</li>
+            {shortcut && (
+              <li>
+                Press <kbd className="rounded border border-neutral-300 px-1 font-mono text-xs dark:border-neutral-700">{shortcut}</kbd> to save instantly.
+              </li>
+            )}
+            <li>Right-click any page or link → Save to bookmark.land.</li>
+          </ul>
+          <button
+            type="button"
+            onClick={openSignIn}
+            className={`rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 ${RING}`}
+          >
+            Sign in to bookmark.land
+          </button>
+          {/* A QR code is made in the browser, so it needs no account. */}
+          {tab && (
+            <button id="qr-code-button" type="button" onClick={() => views.open("qr")} className={OUTLINE_BUTTON}>
+              QR code
+            </button>
+          )}
+        </PlainView>
+      </div>
     </>
   );
 }
@@ -181,16 +268,17 @@ function useOverflows(ref: RefObject<HTMLElement | null>): boolean {
 }
 
 function SignedInView() {
-  // The feedback form replaces the popup's content (a popup can't host a
-  // dialog bigger than itself). The save view stays mounted underneath, so
-  // Back returns to it as it was, and to the link that opened the form.
-  const [showFeedback, setShowFeedback] = useState(false);
-  const feedbackLink = useRef<HTMLButtonElement>(null);
-  const wasInFeedback = useRef(false);
-  useEffect(() => {
-    if (!showFeedback && wasInFeedback.current) feedbackLink.current?.focus();
-    wasInFeedback.current = showFeedback;
-  }, [showFeedback]);
+  const views = useViews();
+  const email = useAccountEmail();
+  const tab = usePageTab();
+  // Which Bookmark the page is, as Quick save finds or makes it: a short link
+  // created here is attached to it.
+  const [bookmarkId, setBookmarkId] = useState<string | null | undefined>(undefined);
+  const shortLink = useShortLink(tab, email, bookmarkId);
+  const openShortLink = () => {
+    shortLink.load();
+    views.open("short");
+  };
 
   // Session summary — the authenticated read model for account limits and
   // bookmark counts. Live, so a Quick save bumps the count in place.
@@ -205,19 +293,51 @@ function SignedInView() {
 
   return (
     <>
-      {showFeedback && <FeedbackForm onBack={() => setShowFeedback(false)} />}
-      <div className={showFeedback ? "hidden" : "contents"}>
-        <PopupHeader />
+      {views.stack.map((view, index) => (
+        <div key={view} className={index === views.stack.length - 1 ? "contents" : "hidden"}>
+          {view === "feedback" && <FeedbackForm onBack={views.back} />}
+          {view === "qr" && tab && (
+            <QrView
+              url={tab.url}
+              onBack={views.back}
+              onShortLink={shortLink.open ? openShortLink : undefined}
+              canShorten={!refusedLocally(tab.address)}
+            />
+          )}
+          {view === "short" && tab && <ShortLinkView tab={tab} model={shortLink} onBack={views.back} />}
+        </div>
+      ))}
+      <div className={views.top ? "hidden" : "contents"}>
+        <PopupHeader email={email ?? undefined} />
         <main
           ref={middle}
           aria-label="This page"
-          // A stop of its own only when there is something to scroll.
+          // A stop of its own only when there is something to scroll. The scroll
+          // padding keeps a focused control's ring clear of the region's edge.
           tabIndex={scrolls ? 0 : undefined}
-          className="min-h-0 flex-1 overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+          className="min-h-0 flex-1 scroll-py-2 overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
         >
           <div className="flex flex-col gap-2 p-3">
             <PendingErrorBanner />
-            <QuickSaveSection />
+            <QuickSaveSection onBookmark={setBookmarkId} />
+            {/* For any web page, whatever Quick save makes of it; after Organize. */}
+            {tab && (
+              <div className="flex gap-2">
+                {shortLink.open && (
+                  <button type="button" onClick={openShortLink} className={`flex-1 ${OUTLINE_BUTTON}`}>
+                    Short link
+                  </button>
+                )}
+                <button
+                  id="qr-code-button"
+                  type="button"
+                  onClick={() => views.open("qr")}
+                  className={`flex-1 ${OUTLINE_BUTTON}`}
+                >
+                  QR code
+                </button>
+              </div>
+            )}
             {summary === null && (
               <LibraryErrorFallback onRetry={() => window.location.reload()} />
             )}
@@ -240,9 +360,8 @@ function SignedInView() {
             </button>
             <span aria-hidden="true">·</span>
             <button
-              ref={feedbackLink}
               type="button"
-              onClick={() => setShowFeedback(true)}
+              onClick={() => views.open("feedback")}
               className={link}
             >
               Send feedback
@@ -267,7 +386,8 @@ function PrivacyNote() {
       While signed in, the address of the page you&apos;re viewing is checked
       against your library to show the saved badge, and its site against
       bookmark.land&apos;s Site security results when you open this popup.
-      Nothing is added to your library unless you save the page.{" "}
+      Nothing is added to your library unless you save the page. Creating a
+      short link stores this address with it.{" "}
       <a
         href={`${import.meta.env.WXT_WEB_APP_URL}/extension/privacy`}
         target="_blank"
@@ -308,9 +428,8 @@ function openLibraryPanel(windowId: number | null) {
 }
 
 /** Logo and name, the labelled Library panel button, and the account menu. */
-function PopupHeader() {
+function PopupHeader({ email }: { email?: string }) {
   const windowId = useActiveWindowId();
-  const email = useAccountEmail();
   return (
     <header className={`${HEADER} relative z-20`}>
       <Brand />
@@ -333,10 +452,11 @@ function PopupHeader() {
  * Who is signed in. The popup's clerk-js often has no user (auth runs through
  * the background worker), so the worker's Clerk read is the fallback.
  */
-function useAccountEmail(): string | undefined {
+function useAccountEmail(): string | null | undefined {
   const { user } = useUser();
   const clerkEmail = user?.primaryEmailAddress?.emailAddress;
-  const [workerEmail, setWorkerEmail] = useState<string | null>(null);
+  // undefined = the worker hasn't answered; null = it has no email
+  const [workerEmail, setWorkerEmail] = useState<string | null | undefined>(undefined);
   useEffect(() => {
     if (clerkEmail) return;
     let mounted = true;
@@ -347,7 +467,7 @@ function useAccountEmail(): string | undefined {
       mounted = false;
     };
   }, [clerkEmail]);
-  return clerkEmail ?? workerEmail ?? undefined;
+  return clerkEmail ?? workerEmail;
 }
 
 /**

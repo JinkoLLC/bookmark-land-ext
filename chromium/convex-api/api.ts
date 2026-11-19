@@ -88,6 +88,24 @@ type CollectionFeed = {
   pages: { pageId: string; path: string; visibility: "public" | "unlisted" | "password" }[];
 };
 
+type ShortLink = {
+  shortUrl: string;
+  targetUrl: string;
+  status: "active" | "blocked";
+  userPaused: boolean;
+  lapsePaused?: boolean;
+};
+
+type ShortLinkUsage = {
+  tier: "free" | "edu" | "pro" | "business";
+  created: number;
+  monthly: number;
+  liveCap?: number;
+  held?: number;
+  resetsAt: number;
+  available: boolean;
+};
+
 type ImportDestination = { type: "root" } | { type: "create"; name: string } | { type: "collection"; id: Id<"collections"> };
 
 export const api = {
@@ -188,6 +206,15 @@ export const api = {
       },
       { ok: true }
     >("productFeedback:submit"),
+  },
+  shortLinks: {
+    // Newest first; `truncated` when the account has more than the newest 1,000.
+    list: query<Record<string, never>, { links: ShortLink[]; truncated: boolean }>("shortLinks:list"),
+    usage: query<Record<string, never>, ShortLinkUsage>("shortLinks:usage"),
+    // The server stores `targetUrl` as `new URL(targetUrl).href`.
+    create: mutation<{ targetUrl: string; bookmarkId?: Id<"bookmarks"> }, { shortUrl: string }>(
+      "shortLinks:create",
+    ),
   },
   siteSecurity: {
     flaggedSites: query<{ sites: string[] }, { site: string; riskLevel: RiskLevel; findingCount: number }[]>(
