@@ -7,6 +7,7 @@ import { browser } from "wxt/browser";
 import { CircleAlert, FolderOpen, Leaf, Loader2 } from "lucide-react";
 import {
   allFoldersMerge,
+  anyRootTicked,
   buildImportModel,
   type NativeNode,
 } from "@/utils/import-tree";
@@ -60,7 +61,8 @@ export function ImportWizard() {
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-start px-4 py-8 sm:px-6 lg:items-center lg:py-12">
         <section className="grid w-full grid-cols-1 gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="flex min-w-0 flex-col justify-between rounded-3xl border border-white/50 bg-white/35 p-6 shadow-2xl shadow-emerald-950/10 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/35 dark:shadow-black/30">
+          {/* Sized to its text and cards, top-aligned: stretched to the other column it left a tall gap. */}
+          <div className="min-w-0 rounded-3xl lg:self-start border border-white/50 bg-white/35 p-6 shadow-2xl shadow-emerald-950/10 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/35 dark:shadow-black/30">
             <div>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/75 px-4 py-2 text-xs font-semibold text-emerald-800 shadow-sm backdrop-blur dark:border-emerald-700/60 dark:bg-emerald-950/60 dark:text-emerald-200">
                 <Leaf className="h-3.5 w-3.5" />
@@ -76,9 +78,9 @@ export function ImportWizard() {
               </p>
             </div>
 
-            {/* On a phone the three cards would push step 1 off the first screen;
+            {/* In one column the three cards would push step 1 or the result down the page;
                 the intro above already covers them. */}
-            <div className="mt-8 hidden gap-3 text-sm text-slate-700 sm:grid dark:text-slate-200">
+            <div className="mt-8 hidden gap-3 text-sm text-slate-700 lg:grid dark:text-slate-200">
               <ImportPromise icon="🌲" title="Folders stay organized" />
               <ImportPromise icon="⛰️" title="Deep trees flatten safely" />
               <ImportPromise icon="✨" title="No duplicates on re-import" />
@@ -273,6 +275,8 @@ function Wizard() {
   };
 
   const nothingSelected = model.importableCount === 0;
+  // Ticked folders can still hold nothing importable: that isn't an empty selection.
+  const nothingImportable = nothingSelected && anyRootTicked(roots, excluded);
   const warning = sessionSummary
     ? allowanceWarningFor(
         model.importableCount,
@@ -388,6 +392,13 @@ function Wizard() {
           </p>
         )}
 
+        {nothingImportable && (
+          <p role="status" className="mb-3 flex items-start gap-2 text-sm text-slate-900 dark:text-slate-100">
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <span>These folders have no bookmarks that can be imported.</span>
+          </p>
+        )}
+
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
@@ -399,7 +410,7 @@ function Wizard() {
             {phase === "importing" && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
             {phase === "importing"
               ? "Importing…"
-              : nothingSelected
+              : nothingSelected && !nothingImportable
                 ? "Select at least one folder"
                 : `Import ${count} bookmark${model.importableCount === 1 ? "" : "s"}`}
           </button>

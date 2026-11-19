@@ -69,7 +69,8 @@ export function importHeading(result: ImportResult): string {
       return `${added} imported`;
     case "partial":
       // The skipped count and its cause are the subtext's; said once.
-      return `Only ${added} ${result.imported + result.restored === 1 ? "was" : "were"} imported`;
+      // "came over", not "imported": the counts line splits it into new and restored.
+      return `Only ${added} came over`;
     case "already-here":
       return "Already all here";
     case "nothing":
@@ -85,17 +86,15 @@ export function importSubtext(result: ImportResult, planLimit: number | null = n
   if (outcome === "already-here")
     return "Every bookmark you picked was already in your library, so nothing new was added.";
   // Two facts side by side, not a cause: the result doesn't say why each bookmark was skipped.
+  const atLimit = planLimit === null ? "" : ` Your library is at its ${formatCount(planLimit)}-bookmark limit.`;
+  if (outcome === "nothing") return `${bookmarks(result.skipped)} could not be imported.${atLimit}`;
   if (planLimit !== null) {
     // "other": apart from the restored and already-saved ones the counts line lists.
     const other = result.restored + result.duplicates > 0 ? "other " : "";
-    return `${formatCount(result.skipped)} ${other}bookmark${result.skipped === 1 ? " wasn't" : "s weren't"} imported. Your library is at its ${formatCount(planLimit)}-bookmark limit.`;
+    return `${formatCount(result.skipped)} ${other}bookmark${result.skipped === 1 ? " wasn't" : "s weren't"} imported.${atLimit}`;
   }
-  // "partial" counts the rest of the selection, "nothing" counts bookmarks.
-  const skipped = outcome === "partial" ? formatCount(result.skipped) : bookmarks(result.skipped);
-  const could = `${skipped} could not be imported.`;
-  return outcome === "partial"
-    ? `${could} What came over is searchable on bookmark.land and in the Library panel.`
-    : could;
+  // Counts the rest of the selection, after the heading's bookmarks.
+  return `${formatCount(result.skipped)} could not be imported. What came over is searchable on bookmark.land and in the Library panel.`;
 }
 
 /** The counts line: only the counts that aren't zero. The skipped count is

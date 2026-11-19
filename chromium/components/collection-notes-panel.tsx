@@ -133,10 +133,9 @@ function EditorLoadingFallback() {
   );
 }
 
-const FILLED_BUTTON =
-  "inline-flex min-h-6 shrink-0 items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+// Outline: the panel's one filled button is "Save to bookmark.land".
 const OUTLINE_BUTTON =
-  "inline-flex min-h-6 items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800";
+  "inline-flex min-h-6 shrink-0 items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800";
 
 // The line clamp does not count lines inside the reader's flex task items:
 // in the strip a task is a block with its mark hung in the left padding.
@@ -160,7 +159,7 @@ function AddNotePrompt({
       <p className="min-w-0 flex-1 truncate" title={`Add a note for ${collection.name}`}>
         Add a note for {collection.name}
       </p>
-      <button type="button" data-note-action="edit" onClick={onEdit} className={FILLED_BUTTON}>
+      <button type="button" data-note-action="edit" onClick={onEdit} className={OUTLINE_BUTTON}>
         Add note
       </button>
     </section>
@@ -212,7 +211,7 @@ function PinnedStrip({
             {noteContent(noteHtml, false)}
           </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
-            <button type="button" data-note-action="full" onClick={onViewFull} className={FILLED_BUTTON}>
+            <button type="button" data-note-action="full" onClick={onViewFull} className={OUTLINE_BUTTON}>
               <BookOpen className="h-3 w-3" aria-hidden="true" />
               View full note
             </button>

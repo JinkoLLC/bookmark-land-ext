@@ -59,6 +59,10 @@ export interface ImportModel {
 export const allFoldersMerge = (model: ImportModel) =>
   model.folders.length === 0 && model.mergedFolderIds.length > 0;
 
+/** A ticked root means the selection isn't empty: its folders can only be unticked one by one under it. */
+export const anyRootTicked = (roots: NativeNode[], excludedIds: ReadonlySet<string>) =>
+  roots.some((root) => !excludedIds.has(root.id));
+
 const MAX_DEPTH = 5; // collections may nest 5 levels: depths 0..4
 
 /**

@@ -188,7 +188,12 @@ export function ImportComplete({
         <button
           type="button"
           onClick={onImportMore}
-          className={`inline-flex min-h-6 items-center rounded px-1 text-sm font-medium text-emerald-800 underline-offset-4 hover:underline dark:text-emerald-200 ${FOCUS_RING}`}
+          // Beside Upgrade it takes the same outline: one style per row of secondary actions.
+          className={
+            planLimit !== null
+              ? OUTLINE_BUTTON
+              : `inline-flex min-h-6 items-center rounded px-1 text-sm font-medium text-emerald-800 underline-offset-4 hover:underline dark:text-emerald-200 ${FOCUS_RING}`
+          }
         >
           Import more
         </button>
