@@ -3,6 +3,7 @@ import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
+import { LibraryErrorBoundary } from "@/components/library-error-boundary";
 import { OrganizeSection } from "@/components/organize";
 import { SiteRiskNotice, useSiteRisks } from "@/components/site-risk";
 import { StatusLine } from "@/components/status-line";
@@ -191,7 +192,47 @@ export function QuickSaveSection({
                 : "Save to bookmark.land"}
         </button>
       )}
-      {bookmarkId && <OrganizeSection bookmarkId={bookmarkId as Id<"bookmarks">} />}
+      {bookmarkId && (
+        <Organize
+          bookmarkId={bookmarkId as Id<"bookmarks">}
+          // Retry goes away when the reads answer: focus waits on the outcome above.
+          onRetry={() => statusLine.current?.focus()}
+        />
+      )}
     </>
+  );
+}
+
+/**
+ * The organizing controls with their failure kept to themselves: one of their
+ * reads throwing (as convex/react does at the call site) leaves the confirmed
+ * save, the title and the rest of the popup as they are. Retry mounts the
+ * reads afresh, which drops their subscriptions so the server is asked again.
+ */
+function Organize({ bookmarkId, onRetry }: { bookmarkId: Id<"bookmarks">; onRetry: () => void }) {
+  const [attempt, setAttempt] = useState(0);
+  return (
+    <LibraryErrorBoundary
+      key={attempt}
+      fallback={() => (
+        <div className="flex items-start gap-2">
+          <StatusLine tone="error" role="alert" className="min-w-0 flex-1">
+            Couldn&apos;t load the collection and tags for this bookmark.
+          </StatusLine>
+          <button
+            type="button"
+            onClick={() => {
+              onRetry();
+              setAttempt(attempt + 1);
+            }}
+            className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+    >
+      <OrganizeSection bookmarkId={bookmarkId} />
+    </LibraryErrorBoundary>
   );
 }

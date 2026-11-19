@@ -319,14 +319,15 @@ function CollectionPicker({
                 onClick={() => {
                   if (canChoose(row)) void choose(row);
                 }}
-                className={`flex items-center gap-2 rounded px-2 py-1 ${
+                // The icon and the check sit on the name's line, whatever the path under it wraps to.
+                className={`flex items-start gap-2 rounded px-2 py-1 ${
                   canChoose(row) ? "cursor-pointer hover:bg-neutral-100 dark:hover:bg-neutral-800" : "opacity-60"
                 } ${
                   // A fill and a bar at the leading edge; the ring belongs to the filter field.
                   i === active ? "bg-neutral-100 shadow-[inset_3px_0_0_var(--ring)] dark:bg-neutral-800" : ""
                 }`}
               >
-                <CollectionGlyph icon={row.icon} color={row.color} className="h-3.5 w-3.5" />
+                <CollectionGlyph icon={row.icon} color={row.color} className="mt-[3px] h-3.5 w-3.5" />
                 <span className="min-w-0 flex-1">
                   <span className="flex gap-1">
                     <span className={`truncate ${row.id === selected.id ? "font-medium" : ""}`}>{row.name}</span>
@@ -335,7 +336,7 @@ function CollectionPicker({
                   {/* Wraps: same-named collections differ at the end of their path. */}
                   {row.path && <span className="block break-words text-xs text-neutral-600 dark:text-neutral-400"> {row.path}</span>}
                 </span>
-                {row.id === selected.id && <Check className="h-4 w-4 shrink-0" aria-hidden="true" />}
+                {row.id === selected.id && <Check className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />}
               </div>
             ))}
           </div>
@@ -388,6 +389,21 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
   const removeTag = useMutation(api.bookmarkTags.removeTagFromBookmark);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [removed, setRemoved] = useState("");
+  const chips = useRef<HTMLDivElement>(null);
+  const field = useRef<HTMLInputElement>(null);
+  /** Where the chip being removed sat: its neighbour takes the focus it had. */
+  const removedAt = useRef<number | null>(null);
+
+  // The removed chip took its focused button with it: focus goes to the chip
+  // now in its place, or to the field after the last one.
+  const ids = (currentTags ?? []).map((t) => t._id).join();
+  useEffect(() => {
+    const index = removedAt.current;
+    removedAt.current = null;
+    if (index === null || document.activeElement !== document.body) return;
+    (chips.current?.querySelectorAll("button")[index] ?? field.current)?.focus();
+  }, [ids]);
 
   const currentNames = (currentTags ?? []).map((t) => t.name);
   const suggestions = suggestTags(allTags ?? [], input, currentNames);
@@ -399,6 +415,7 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
     const tagName = name.trim();
     if (!tagName) return;
     setError(null);
+    setRemoved("");
     try {
       await addTag({ bookmarkId, tagName });
       setInput((current) => inputAfterTagSaved(current, name));
@@ -407,19 +424,22 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
     }
   };
 
-  const remove = async (tagId: Id<"tags">) => {
+  const remove = async (tagId: Id<"tags">, name: string, index: number) => {
     setError(null);
+    removedAt.current = index;
     try {
       await removeTag({ bookmarkId, tagId });
+      setRemoved(`Removed tag ${name}`);
     } catch (e) {
+      removedAt.current = null;
       setError(describe(e, "Couldn't remove that tag."));
     }
   };
 
   return (
     <>
-      <div className="flex flex-wrap items-center gap-1.5">
-        {(currentTags ?? []).map((tag) => (
+      <div ref={chips} className="flex flex-wrap items-center gap-1.5">
+        {(currentTags ?? []).map((tag, index) => (
           <span
             key={tag._id}
             className="inline-flex min-w-0 items-center rounded-full bg-neutral-100 pl-2 dark:bg-neutral-800"
@@ -428,7 +448,7 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
             <button
               type="button"
               aria-label={`Remove tag ${tag.name}`}
-              onClick={() => void remove(tag._id)}
+              onClick={() => void remove(tag._id, tag.name, index)}
               className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-neutral-600 hover:text-neutral-900 dark:text-neutral-300 dark:hover:text-neutral-100 ${RING}`}
             >
               <X className="h-3 w-3" aria-hidden="true" />
@@ -436,6 +456,7 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
           </span>
         ))}
         <input
+          ref={field}
           value={input}
           onChange={(e) => {
             setInput(e.target.value);
@@ -450,7 +471,7 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
           list="tag-suggestions"
           aria-label="Add tag"
           placeholder="Add tag"
-          className={`min-w-24 flex-1 rounded-md border border-neutral-300 bg-transparent px-2 py-0.5 placeholder:text-neutral-500 dark:border-neutral-700 dark:placeholder:text-neutral-400 ${RING}`}
+          className={`h-9 min-w-24 flex-1 rounded-md border border-neutral-300 bg-transparent px-2 placeholder:text-neutral-500 dark:border-neutral-700 dark:placeholder:text-neutral-400 ${RING}`}
         />
         <datalist id="tag-suggestions">
           {suggestions.map((name) => (
@@ -458,6 +479,10 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
           ))}
         </datalist>
       </div>
+      {/* Always here, so a removal is announced as a change to it. */}
+      <p role="status" className="sr-only">
+        {removed}
+      </p>
       {error && (
         <StatusLine tone="error" role="alert">
           {error}

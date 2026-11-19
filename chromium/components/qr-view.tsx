@@ -115,8 +115,9 @@ export function PageAddress({
 }
 
 /** A copy's outcome; "Copied" goes back to the button's own label after two seconds. */
-function useCopyState() {
-  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
+export type CopyState = "idle" | "copied" | "failed";
+export function useCopyState() {
+  const [copy, setCopy] = useState<CopyState>("idle");
   useEffect(() => {
     if (copy !== "copied") return;
     const timer = setTimeout(() => setCopy("idle"), 2_000);
@@ -129,11 +130,23 @@ function useCopyState() {
  * Copy image, Download PNG and Download SVG for one QR code. `stacked` is the
  * narrow column beside a small code: three outline buttons.
  */
-export function QrExports({ svg, fileName, stacked = false }: { svg: string; fileName: string; stacked?: boolean }) {
+export function QrExports({
+  svg,
+  fileName,
+  stacked = false,
+  copyState,
+}: {
+  svg: string;
+  fileName: string;
+  stacked?: boolean;
+  /** The copy's outcome when the owner holds it, and announces "copied" itself, beside another Copy. */
+  copyState?: readonly [CopyState, (state: CopyState) => void];
+}) {
   // Drawn when the code appears, so a download runs straight from its click.
   // null = being drawn; "failed" = it can't be, which leaves the SVG.
   const [png, setPng] = useState<Blob | null | "failed">(null);
-  const [copy, setCopy] = useCopyState();
+  const own = useCopyState();
+  const [copy, setCopy] = copyState ?? own;
   useEffect(() => {
     let current = true;
     setPng(null);
@@ -186,9 +199,11 @@ export function QrExports({ svg, fileName, stacked = false }: { svg: string; fil
           Download SVG
         </button>
       </div>
-      <span role="status" className="sr-only">
-        {copy === "copied" ? "Copied" : ""}
-      </span>
+      {!copyState && (
+        <span role="status" className="sr-only">
+          {copy === "copied" ? "Copied" : ""}
+        </span>
+      )}
       {png === "failed" ? (
         <StatusLine tone="error" role="alert" className="text-xs">
           Couldn&apos;t make the PNG. Use Download SVG.
@@ -227,15 +242,23 @@ export function QrView({
   const dense = matrix !== null && matrix.length > 17 + 4 * DENSE_ABOVE_VERSION;
   const scroll = useScrollMore();
   const [copy, setCopy] = useCopyState();
-  const shortLink = onShortLink && canShorten && (
-    <button type="button" onClick={onShortLink} className={`min-h-6 ${TEXT_LINK}`}>
-      Use a short link
-    </button>
-  );
+  const shortLink = (label = "Use a short link") =>
+    onShortLink &&
+    canShorten && (
+      <button type="button" onClick={onShortLink} className={`min-h-6 ${TEXT_LINK}`}>
+        {label}
+      </button>
+    );
   return (
     <>
       <ViewHeader title="QR code" id="qr-heading" onBack={onBack} focusOnOpen />
-      <main ref={scroll.ref} className={`min-h-0 scroll-py-2 overflow-y-auto ${scroll.more ? MORE_BELOW : ""}`}>
+      <main
+        ref={scroll.ref}
+        aria-labelledby="qr-heading"
+        // A stop of its own only when there is something to scroll, as in the main view.
+        tabIndex={scroll.overflows ? 0 : undefined}
+        className={`min-h-0 scroll-py-2 overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${scroll.more ? MORE_BELOW : ""}`}
+      >
         <div className="flex flex-col gap-2 p-3">
           {svg ? (
             <>
@@ -243,14 +266,16 @@ export function QrView({
                 <QrImage svg={svg} label={`QR code for ${extractDomain(url)}`} size={200} describedBy="qr-address" />
               </div>
               {dense && (
-                <p className={`text-xs ${MUTED}`}>This code is dense. Scan it from the downloaded PNG or a print.</p>
+                <p className={`text-xs ${MUTED}`}>
+                  This code is dense. Scan it from the downloaded PNG or a print
+                  {shortLink() ? <>, or {shortLink("use a short link")}.</> : "."}
+                </p>
               )}
-              {dense && shortLink && <p className="text-xs">A short link&apos;s code is simpler to scan. {shortLink}</p>}
               <PageAddress text={url} id="qr-address" />
               <QrExports svg={svg} fileName={`qr-${extractDomain(url)}`} />
               <p className={`text-xs ${MUTED}`}>
                 Made in your browser. It isn&apos;t tracked and can&apos;t be changed after printing.
-                {!dense && shortLink && <> Want scans counted? {shortLink}</>}
+                {!dense && shortLink() && <> Want scans counted? {shortLink()}</>}
               </p>
             </>
           ) : (
@@ -281,7 +306,7 @@ export function QrView({
                   Couldn&apos;t copy the address.
                 </StatusLine>
               )}
-              {shortLink && <p className="text-xs">A short link&apos;s QR code would fit. {shortLink}</p>}
+              {shortLink() && <p className="text-xs">A short link&apos;s QR code would fit. {shortLink()}</p>}
             </>
           )}
         </div>

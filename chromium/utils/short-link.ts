@@ -105,10 +105,13 @@ export function limitReached(
   const kept = usage.liveCap !== undefined && (usage.held ?? 0) >= usage.liveCap;
   if (!monthly && !kept) return null;
   const resets = new Date(usage.resetsAt).toLocaleDateString(locale, { month: "short", day: "numeric" });
+  const plan = TIER_LABEL[usage.tier];
   return {
     sentences: [
       ...(monthly ? [`You've made all ${count(usage.monthly)} short links for this month. You can make more on ${resets}.`] : []),
-      ...(kept ? [`The ${TIER_LABEL[usage.tier]} plan keeps up to ${count(usage.liveCap!)} short links at once. Delete one to make room.`] : []),
+      // Deleting is permanent and gives nothing back this month, so it is only asked for when it would help now.
+      ...(kept && monthly ? [`After that you'd also need to delete one: the ${plan} plan keeps up to ${count(usage.liveCap!)} at once.`] : []),
+      ...(kept && !monthly ? [`The ${plan} plan keeps up to ${count(usage.liveCap!)} short links at once. Delete one to make room.`] : []),
     ],
     upgrade: monthly && (usage.tier === "free" || usage.tier === "edu"),
     manage: kept,
@@ -175,7 +178,7 @@ export type ShortLinkView =
     }
   /**
    * A creation was started and the popup closed before its answer. "Create
-   * short link anyway" passes the checks of an ordinary Create: none is
+   * and copy anyway" passes the checks of an ordinary Create: none is
    * offered at a reached `limit`, and it waits for Quick save (`wait`).
    */
   | { kind: "unfinished"; at: number; checking: boolean; limit: boolean; wait: null | "page" }

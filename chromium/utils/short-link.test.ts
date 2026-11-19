@@ -115,7 +115,8 @@ describe("limitReached", () => {
     const both = limitReached({ ...EDU, tier: "free", held: 26, created: 25 }, "en-US")!;
     expect(both.sentences).toEqual([
       "You've made all 25 short links for this month. You can make more on Dec 1.",
-      "The Free plan keeps up to 25 short links at once. Delete one to make room.",
+      // Deleting wouldn't help this month, so it isn't asked for as the next step.
+      "After that you'd also need to delete one: the Free plan keeps up to 25 at once.",
     ]);
     expect(both).toMatchObject({ upgrade: true, manage: true });
   });
@@ -233,11 +234,11 @@ describe("deriveShortLinkView", () => {
     expect(deriveShortLinkView({ ...base, record: 5, list: undefined })).toEqual({ ...unfinished, checking: true });
     // A match that arrives late replaces it.
     expect(deriveShortLinkView({ ...base, record: 5, list: { links: [link()], truncated: false } })).toMatchObject({ kind: "link", outcome: "existing" });
-    // "Create short link anyway" is a creation like any other.
+    // "Create and copy anyway" is a creation like any other.
     expect(deriveShortLinkView({ ...base, record: 5, creation: { status: "creating", slow: false } })).toMatchObject({ kind: "create", wait: "creating" });
   });
 
-  it("holds Create short link anyway to the checks of an ordinary Create", () => {
+  it("holds Create and copy anyway to the checks of an ordinary Create", () => {
     // No allowance left: no Create at all. Quick save still checking or saving: it waits.
     expect(deriveShortLinkView({ ...base, record: 5, usage: { ...PRO, created: 50 } })).toMatchObject({ kind: "unfinished", limit: true });
     expect(deriveShortLinkView({ ...base, record: 5, usage: { ...EDU, held: 25 } })).toMatchObject({ kind: "unfinished", limit: true });

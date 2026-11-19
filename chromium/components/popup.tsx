@@ -229,7 +229,7 @@ function SignedOutView() {
             Once you&apos;re signed in:
           </p>
           <ul aria-labelledby="signed-in-list" className={`-mt-2 list-disc space-y-1 pl-4 ${MUTED}`}>
-            <li>Open bookmark.land from the browser toolbar, then choose <span className={LABEL}>Save to bookmark.land</span>.</li>
+            <li>Click this icon in the browser toolbar, then choose <span className={LABEL}>Save to bookmark.land</span>.</li>
             {shortcut && (
               <li>
                 Press <kbd className="rounded border border-neutral-300 px-1 font-mono text-xs dark:border-neutral-700">{shortcut}</kbd> to save instantly.
@@ -331,7 +331,7 @@ function SignedInView() {
                 </button>
               </div>
             )}
-            <PrivacyNote shortLinks={Boolean(tab) && shortLink.open} />
+            <PrivacyNote shortLinks={Boolean(tab) && shortLink.open} compact={Boolean(bookmarkId)} />
           </div>
         </main>
         <footer className="flex shrink-0 flex-col border-t border-neutral-200 px-3 pb-2 pt-[7px] text-xs text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
@@ -370,19 +370,50 @@ function SignedInView() {
  * in the UI, not only on the listing. Last block of the scrolling region:
  * always reachable, never taking fixed space.
  */
-function PrivacyNote({ shortLinks }: { /** The Short link button is offered. */ shortLinks: boolean }) {
+function PrivacyNote({
+  shortLinks,
+  compact,
+}: {
+  /** The Short link button is offered. */
+  shortLinks: boolean;
+  /** The page is a Bookmark: the organizing controls need the room, so the full text waits behind "More". */
+  compact: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const link = `rounded underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300 ${RING}`;
   return (
     <p className={`text-xs ${MUTED}`}>
-      While signed in, the address of the page you&apos;re viewing is checked
-      against your library to show the saved badge, and its site against
-      bookmark.land&apos;s Site security results when you open this popup.
-      Nothing is added to your library unless you save the page.
-      {shortLinks && " Creating a short link stores this address with it."}{" "}
+      {compact && !open ? (
+        <>While signed in, the page you&apos;re viewing is checked against your library and Site security.</>
+      ) : (
+        <>
+          While signed in, the address of the page you&apos;re viewing is checked
+          against your library to show the saved badge, and its site against
+          bookmark.land&apos;s Site security results when you open this popup.
+          Nothing is added to your library unless you save the page.
+          {shortLinks && " Creating a short link stores this address with it."}
+        </>
+      )}{" "}
+      {compact && (
+        <>
+          <button
+            type="button"
+            aria-expanded={open}
+            onClick={() => setOpen(!open)}
+            // In running text: the target reaches 24 px without making the line taller.
+            className={`relative after:absolute after:inset-x-0 after:-inset-y-1 ${link}`}
+          >
+            {open ? "Less" : "More"}
+            <span className="sr-only"> about what is checked</span>
+          </button>
+          <span aria-hidden="true"> · </span>
+        </>
+      )}
       <a
         href={`${import.meta.env.WXT_WEB_APP_URL}/extension/privacy`}
         target="_blank"
         rel="noreferrer"
-        className={`rounded underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300 ${RING}`}
+        className={link}
       >
         Privacy
       </a>

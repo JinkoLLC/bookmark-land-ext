@@ -5,7 +5,7 @@ import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
 import { ExternalLink } from "lucide-react";
 import { openUpgrade } from "@/components/quick-save";
-import { PageAddress, QrExports, QrImage, TEXT_LINK, useQrSvg } from "@/components/qr-view";
+import { PageAddress, QrExports, QrImage, TEXT_LINK, useCopyState, useQrSvg, type CopyState } from "@/components/qr-view";
 import { StatusLine } from "@/components/status-line";
 import { ViewHeader } from "@/components/view-header";
 import { MORE_BELOW, useScrollMore } from "@/hooks/use-scroll-more";
@@ -41,6 +41,7 @@ const FILLED = `rounded-md bg-primary px-3 py-2 font-medium text-primary-foregro
  */
 const COPY_ON_CREATE = true;
 const SLOW_AFTER_MS = 8_000;
+const UNAVAILABLE = "Short links aren't included in your plan.";
 
 /** The active tab's page: its address as the browser gives it, and parsed as the server stores a destination. */
 export type PageTab = { url: string; address: string; title?: string };
@@ -190,38 +191,61 @@ function ManageLink() {
   );
 }
 
+type LinkView = Extract<View, { kind: "link" }>;
+
+/** What a short link's view opens on: how it came to be, or why it doesn't open. */
+const linkStatus = (view: LinkView) =>
+  view.state === "paused"
+    ? "This page's short link is paused."
+    : view.state === "blocked"
+      ? "This page's short link was blocked and no longer opens."
+      : view.outcome === "created-copied"
+        ? "Short link created and copied"
+        : view.outcome === "created"
+          ? "Short link created"
+          : "This page already has a short link";
+
 /** The short link itself, its destination, and (while it is active) its tracked QR code. */
-function LinkBlock({ view, copyButton }: { view: Extract<View, { kind: "link" }>; copyButton: React.RefObject<HTMLButtonElement | null> }) {
-  const [copied, setCopied] = useState<boolean | null>(null);
+function LinkBlock({ view, copyButton }: { view: LinkView; copyButton: React.RefObject<HTMLButtonElement | null> }) {
+  // Two copies share the clipboard: only the latest one reads "Copied".
+  const [link, setLink] = useCopyState();
+  const [image, setImage] = useCopyState();
+  const latest = (set: typeof setLink, other: typeof setLink) => (state: CopyState) => {
+    set(state);
+    if (state === "copied") other((now) => (now === "copied" ? "idle" : now));
+  };
   const text = shortLinkText(view.shortUrl);
   const svg = useQrSvg(trackedQrAddress(view.shortUrl));
   const copy = (
     <button
       ref={copyButton}
       type="button"
-      onClick={() => void copyText(view.shortUrl).then(setCopied)}
+      onClick={() => void copyText(view.shortUrl).then((ok) => latest(setLink, setImage)(ok ? "copied" : "failed"))}
       className={`shrink-0 ${view.state === "active" ? FILLED : OUTLINE}`}
     >
-      {copied ? "Copied" : "Copy"}
+      {link === "copied" ? "Copied" : "Copy"}
     </button>
+  );
+  const destination = (
+    <PageAddress
+      className={MUTED}
+      text={
+        view.state === "blocked"
+          ? `Opened ${view.targetUrl}`
+          : view.state === "paused"
+            ? `Points to ${view.targetUrl}. It won't open while paused.`
+            : `Opens ${view.targetUrl}`
+      }
+    />
   );
   return (
     <>
-      {view.state === "active" ? (
-        <StatusLine tone="ok" role="status" className="font-medium">
-          {view.outcome === "created-copied"
-            ? "Short link created and copied"
-            : view.outcome === "created"
-              ? "Short link created"
-              : "This page already has a short link"}
-        </StatusLine>
-      ) : (
-        <StatusLine tone="error" role="status" className="font-medium">
-          {view.state === "paused"
-            ? "This page's short link is paused."
-            : "This page's short link was blocked and no longer opens."}
-        </StatusLine>
-      )}
+      {/* Announced by the view's own status region. */}
+      <StatusLine tone={view.state === "active" ? "ok" : "error"} className="font-medium">
+        {linkStatus(view)}
+      </StatusLine>
+      {/* What a link that doesn't open pointed to comes before the link and its Copy. */}
+      {view.state !== "active" && destination}
       <div className="flex items-center gap-2">
         {view.state === "active" ? (
           <input
@@ -237,30 +261,26 @@ function LinkBlock({ view, copyButton }: { view: Extract<View, { kind: "link" }>
         {view.state !== "blocked" && copy}
       </div>
       <span role="status" className="sr-only">
-        {copied ? "Copied" : ""}
+        {link === "copied" ? "Short link copied" : image === "copied" ? "Image copied" : ""}
       </span>
-      {copied === false && (
+      {link === "failed" && (
         <StatusLine tone="error" role="alert" className="text-xs">
           Couldn&apos;t copy. Select the short link and copy it.
         </StatusLine>
       )}
-      <PageAddress
-        className={MUTED}
-        text={
-          view.state === "blocked"
-            ? `Opened ${view.targetUrl}`
-            : view.state === "paused"
-              ? `Points to ${view.targetUrl}. It won't open while paused.`
-              : `Opens ${view.targetUrl}`
-        }
-      />
+      {view.state === "active" && destination}
       {view.state === "active" && svg && (
         <>
           <hr className="border-neutral-200 dark:border-neutral-800" />
           <h2 className="font-medium">Tracked QR code</h2>
           <div className="flex gap-3">
             <QrImage svg={svg} label={`Tracked QR code for ${text}`} size={112} />
-            <QrExports svg={svg} fileName={`qr-${new URL(view.shortUrl).pathname.slice(1)}`} stacked />
+            <QrExports
+              svg={svg}
+              fileName={`qr-${new URL(view.shortUrl).pathname.slice(1)}`}
+              stacked
+              copyState={[image, latest(setImage, setLink)]}
+            />
           </div>
           <p className={`text-xs ${MUTED}`}>Scans are counted, and you can change where it opens.</p>
         </>
@@ -299,7 +319,7 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
   const page = (
     <div className="min-w-0">
       {tab.title?.trim() && (
-        <p className="truncate font-medium" title={tab.title}>
+        <p className="line-clamp-2 font-medium" title={tab.title}>
           {tab.title.trim()}
         </p>
       )}
@@ -308,9 +328,24 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
   );
   const allowance = usage && <p className={`text-xs ${MUTED}`}>{allowanceLine(usage, view.kind === "create")}</p>;
 
+  const limit = usage && limitReached(usage);
+  // One region for what the view turns into: it stays mounted and its text
+  // changes, which a line that arrives already filled wouldn't be announced for.
+  // Failures are alerts of their own.
+  const announcement =
+    view.kind === "unavailable"
+      ? UNAVAILABLE
+      : view.kind === "link"
+        ? linkStatus(view)
+        : view.kind === "unfinished"
+          ? unfinishedSentence(view.at, Date.now())
+          : view.kind === "limit"
+            ? (limit?.sentences.join(" ") ?? "")
+            : "";
+
   let content: ReactNode;
   if (view.kind === "unavailable") {
-    content = <p role="status">Short links aren&apos;t included in your plan.</p>;
+    content = <p>{UNAVAILABLE}</p>;
   } else if (view.kind === "failed") {
     content = (
       <>
@@ -339,12 +374,12 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
       </>
     );
   } else if (view.kind === "unfinished") {
-    // "Create short link anyway" passes the same checks as an ordinary Create.
+    // "Create and copy anyway" passes the same checks as an ordinary Create.
     const waiting = view.checking || view.wait !== null;
     content = (
       <>
         {page}
-        <p role="status">{unfinishedSentence(view.at, Date.now())}</p>
+        <p>{unfinishedSentence(view.at, Date.now())}</p>
         <button
           type="button"
           aria-disabled={view.checking}
@@ -355,15 +390,22 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
         </button>
         {view.limit ? (
           <>
-            {usage && limitReached(usage)?.sentences.map((sentence) => <p key={sentence}>{sentence}</p>)}
+            {limit?.sentences.map((sentence) => <p key={sentence}>{sentence}</p>)}
             {allowance}
           </>
         ) : (
           <>
-            <button type="button" aria-disabled={waiting} onClick={() => !waiting && create()} className={OUTLINE}>
-              Create short link anyway
+            <button
+              type="button"
+              aria-disabled={waiting}
+              aria-describedby="create-anyway-note"
+              onClick={() => !waiting && create()}
+              className={OUTLINE}
+            >
+              {COPY_ON_CREATE ? "Create and copy anyway" : "Create short link anyway"}
             </button>
-            <p role="status" className={`text-xs ${MUTED}`}>
+            {/* Read with the button it explains. */}
+            <p id="create-anyway-note" className={`text-xs ${MUTED}`}>
               {!view.checking && view.wait === "page" ? "Checking this page…" : "This may use a second short link."}
             </p>
           </>
@@ -371,7 +413,6 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
       </>
     );
   } else if (view.kind === "limit") {
-    const limit = usage && limitReached(usage);
     content = (
       <>
         {page}
@@ -433,13 +474,20 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
 
   return (
     <>
-      <ViewHeader title="Short link" onBack={onBack} focusOnOpen />
+      <ViewHeader title="Short link" id="short-link-heading" onBack={onBack} focusOnOpen />
       <main
         ref={scroll.ref}
-        tabIndex={-1}
+        aria-labelledby="short-link-heading"
+        // Takes focus when a change removes the focused control; a Tab stop only when there is something to scroll.
+        tabIndex={scroll.overflows ? 0 : -1}
         className={`min-h-0 scroll-py-2 overflow-y-auto focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring ${scroll.more ? MORE_BELOW : ""}`}
       >
-        <div className="flex flex-col gap-2 p-3">{content}</div>
+        <div className="flex flex-col gap-2 p-3">
+          <p role="status" className="sr-only">
+            {announcement}
+          </p>
+          {content}
+        </div>
       </main>
     </>
   );
