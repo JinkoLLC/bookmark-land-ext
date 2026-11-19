@@ -44,7 +44,7 @@ export function importLinks(result: ImportResult): ImportLinks {
   return { primaryPath, collections };
 }
 
-export const formatCount = (n: number) => n.toLocaleString("en-US");
+export const formatCount = (n: number) => n.toLocaleString();
 
 const bookmarks = (n: number) => `${formatCount(n)} bookmark${n === 1 ? "" : "s"}`;
 

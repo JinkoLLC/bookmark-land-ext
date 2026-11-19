@@ -49,14 +49,15 @@ export function DestinationPicker({
               onChange={(e) =>
                 onChange({ kind: "existing", id: e.target.value || undefined })
               }
-              className="mt-2 w-full rounded-xl border border-emerald-100 bg-white/85 px-3 py-2 text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-emerald-900/70 dark:bg-slate-950/80"
+              className="mt-2 w-full truncate rounded-xl border border-emerald-100 bg-white/85 px-3 py-2 text-left text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-emerald-900/70 dark:bg-slate-950/80"
             >
               <option value="">
                 {loading ? "Loading collections…" : "Choose a collection…"}
               </option>
               {options.map((o) => (
                 <option key={o.id} value={o.id}>
-                  {"\u00A0".repeat(o.depth * 3) + o.name + (onPage.has(o.id) ? " · on a page" : "")}
+                  {/* The chosen one is not indented: closed, the select shows the start of its name. */}
+                  {"\u00A0".repeat(o.id === value.id ? 0 : o.depth * 3) + o.name + (onPage.has(o.id) ? " · on a page" : "")}
                 </option>
               ))}
             </select>
@@ -123,7 +124,7 @@ function Choice({
           name="import-destination"
           checked={checked}
           onChange={onSelect}
-          className="h-4 w-4 shrink-0 accent-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          className="h-4 w-4 shrink-0 accent-emerald-700 dark:accent-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         />
         <span className="min-w-0 break-words font-medium">{label}</span>
       </label>

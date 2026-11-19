@@ -8,7 +8,7 @@ import {
 } from "@/utils/panel-layout";
 
 const STEP_BUTTON =
-  "flex h-6 w-6 items-center justify-center rounded bg-white text-neutral-600 enabled:hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:text-neutral-400 dark:bg-neutral-900 dark:text-neutral-300 dark:enabled:hover:bg-neutral-800 dark:disabled:text-neutral-500";
+  "flex h-6 w-6 items-center justify-center text-neutral-700 first:rounded-l-full last:rounded-r-full enabled:hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:text-neutral-400 dark:text-neutral-200 dark:enabled:hover:bg-neutral-800 dark:disabled:text-neutral-500";
 
 /**
  * Draggable separator between the collection tree and the bookmark list.
@@ -120,7 +120,8 @@ export function PanelDivider({
         // The ring is drawn inside: the area spans the panel, so an outer ring would be cut off.
         className="absolute inset-0 cursor-row-resize focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       />
-      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 gap-1">
+      {/* One pill for the pair. Its border is drawn over the buttons, so they stay 24 px inside the 24 px row. */}
+      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 rounded-full bg-white after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:border after:border-neutral-300 dark:bg-neutral-900 dark:after:border-neutral-700">
         <button
           type="button"
           aria-label="Show more collections"
@@ -129,7 +130,7 @@ export function PanelDivider({
           onClick={() => step(RESIZE_STEP)}
           className={STEP_BUTTON}
         >
-          <ChevronDown className="h-3.5 w-3.5" aria-hidden="true" />
+          <ChevronDown className="h-4 w-4" aria-hidden="true" />
         </button>
         <button
           type="button"
@@ -139,7 +140,7 @@ export function PanelDivider({
           onClick={() => step(-RESIZE_STEP)}
           className={STEP_BUTTON}
         >
-          <ChevronUp className="h-3.5 w-3.5" aria-hidden="true" />
+          <ChevronUp className="h-4 w-4" aria-hidden="true" />
         </button>
       </div>
     </div>

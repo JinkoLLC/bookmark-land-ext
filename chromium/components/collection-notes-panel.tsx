@@ -112,7 +112,7 @@ export function CollectionNotesPanel({
   return (
     <PinnedStrip
       collection={collection}
-      noteText={noteText}
+      noteHtml={collection.notes ?? ""}
       expanded={expanded}
       onToggle={() => setExpanded((value) => !value)}
       onViewFull={() => setMode("full")}
@@ -137,6 +137,11 @@ const FILLED_BUTTON =
   "inline-flex min-h-6 shrink-0 items-center gap-1 rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const OUTLINE_BUTTON =
   "inline-flex min-h-6 items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800";
+
+// The line clamp does not count lines inside the reader's flex task items:
+// in the strip a task is a block with its mark hung in the left padding.
+const STRIP_TASKS =
+  "[&_ul[data-type=taskList]>li]:relative [&_ul[data-type=taskList]>li]:block! [&_ul[data-type=taskList]>li]:pl-8 [&_ul[data-type=taskList]>li>label]:absolute [&_ul[data-type=taskList]>li>label]:left-0";
 
 /** One line, so the bookmark list keeps its rows. */
 function AddNotePrompt({
@@ -164,7 +169,7 @@ function AddNotePrompt({
 
 function PinnedStrip({
   collection,
-  noteText,
+  noteHtml,
   expanded,
   onToggle,
   onViewFull,
@@ -172,7 +177,7 @@ function PinnedStrip({
   onOpenWeb,
 }: {
   collection: NoteCollection;
-  noteText: string;
+  noteHtml: string;
   expanded: boolean;
   onToggle: () => void;
   onViewFull: () => void;
@@ -200,9 +205,12 @@ function PinnedStrip({
       {expanded && (
         <div className="border-t border-neutral-200 p-2 dark:border-neutral-800">
           {/* Clamped, not scrolled: "View full note" shows the rest. */}
-          <p className="line-clamp-6 whitespace-pre-wrap leading-5 text-neutral-700 dark:text-neutral-300">
-            {noteText}
-          </p>
+          {/* The reader's structure; links are plain text here, so the preview adds no Tab stops. */}
+          <div
+            className={`tiptap-extension-editor line-clamp-6 leading-5 text-neutral-700 dark:text-neutral-300 ${STRIP_TASKS}`}
+          >
+            {noteContent(noteHtml, false)}
+          </div>
           <div className="mt-2 flex flex-wrap items-center gap-2">
             <button type="button" data-note-action="full" onClick={onViewFull} className={FILLED_BUTTON}>
               <BookOpen className="h-3 w-3" aria-hidden="true" />
@@ -287,21 +295,21 @@ function FullPageReader({
 }
 
 /** The note as React elements: only the tags and link targets the editor writes. */
-function noteContent(html: string): ReactNode {
+function noteContent(html: string, links = true): ReactNode {
   // Plain text (a note written before the editor) keeps its line breaks.
   if (!/<[a-z]/i.test(html)) return <p className="whitespace-pre-wrap">{html.trim()}</p>;
   const { body } = new DOMParser().parseFromString(html, "text/html");
-  return [...body.childNodes].map(noteNode);
+  return [...body.childNodes].map((node, key) => noteNode(node, key, links));
 }
 
-function noteNode(node: ChildNode, key: number): ReactNode {
+function noteNode(node: ChildNode, key: number, links: boolean): ReactNode {
   if (node.nodeType === Node.TEXT_NODE) return node.textContent;
   if (node.nodeType !== Node.ELEMENT_NODE) return null;
   const element = node as Element;
   const tag = element.tagName.toLowerCase();
   if (tag === "script" || tag === "style") return null;
-  const children = [...element.childNodes].map(noteNode);
-  const href = tag === "a" ? safeNoteHref(element.getAttribute("href")) : null;
+  const children = [...element.childNodes].map((child, index) => noteNode(child, index, links));
+  const href = links && tag === "a" ? safeNoteHref(element.getAttribute("href")) : null;
   // Anything else keeps its text and loses its markup.
   if (!NOTE_READER_TAGS.has(tag) || (tag === "a" && !href)) {
     // The editor has no level-one heading; the web app's shows as the top level here.
