@@ -1,11 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  importCounts,
   importHeading,
   importLinks,
   importSample,
   importOutcome,
-  importSubtext,
+  importLines,
   reachedPlanLimit,
   sampleTitle,
 } from "./import-result";
@@ -59,38 +58,52 @@ describe("the result screen's decisions", () => {
   it("words the heading from what arrived and what was skipped", () => {
     expect(importHeading(all)).toBe(`${(1284).toLocaleString()} bookmarks imported`);
     expect(importHeading({ ...all, imported: 1, restored: 0 })).toBe("1 bookmark imported");
-    expect(importHeading(partial)).toBe("Only 6 bookmarks came over");
-    expect(importHeading({ ...partial, imported: 1, restored: 0 })).toBe("Only 1 bookmark came over");
+    expect(importHeading(partial)).toBe("6 bookmarks imported, 47 could not be imported");
+    expect(importHeading({ ...partial, imported: 1, restored: 0, skipped: 1 })).toBe(
+      "1 bookmark imported, 1 could not be imported",
+    );
     expect(importHeading(here)).toBe("Already all here");
     expect(importHeading(nothing)).toBe("Nothing was imported");
   });
 
-  it("never says everything was already saved when some were skipped", () => {
-    expect(importSubtext(nothing)).toBe("47 bookmarks could not be imported.");
-    expect(importSubtext(here)).toContain("already in your library");
+  it("lists under the heading only the lines that apply", () => {
+    const grew = "Your library just grew. Everything is searchable on bookmark.land and in the Library panel.";
+    const limit = "Your library is at its 100-bookmark limit.";
+    expect(importLines(all)).toEqual([grew, `Imported: ${(1280).toLocaleString()} new · 4 restored from Trash`]);
+    // No restored ones: the heading already says the number.
+    expect(importLines({ ...all, restored: 0 })).toEqual([grew]);
+    expect(importLines(partial, 100)).toEqual([
+      "Imported: 4 new · 2 restored from Trash",
+      "11 were already in your library.",
+      limit,
+    ]);
+    expect(importLines(partial)).toEqual([
+      "Imported: 4 new · 2 restored from Trash",
+      "11 were already in your library.",
+    ]);
+    expect(importLines({ ...partial, imported: 0, duplicates: 1 })).toEqual([
+      "Imported: 2 restored from Trash",
+      "1 was already in your library.",
+    ]);
+    expect(importLines({ ...partial, restored: 0, duplicates: 0 }, 100)).toEqual([limit]);
+    expect(importLines(nothing, 100)).toEqual([
+      "47 bookmarks could not be imported.",
+      "3 were already in your library.",
+      limit,
+    ]);
+    expect(importLines({ ...nothing, duplicates: 0, skipped: 1 }, 1000)).toEqual([
+      "1 bookmark could not be imported.",
+      `Your library is at its ${(1000).toLocaleString()}-bookmark limit.`,
+    ]);
+    expect(importLines(here)).toEqual(["64 were already in your library."]);
   });
 
-  it("says the skipped count once, and the plan's limit beside it (not as its cause) when reached", () => {
-    // "other" keeps the skipped apart from the restored and already-saved ones in the counts line.
-    const atLimit = "47 other bookmarks weren't imported. Your library is at its 100-bookmark limit.";
-    expect(importSubtext(partial, 100)).toBe(atLimit);
-    // With nothing imported there is nothing for "other" to be apart from.
-    expect(importSubtext(nothing, 100)).toBe(
-      "47 bookmarks could not be imported. Your library is at its 100-bookmark limit.",
-    );
-    expect(importSubtext({ ...partial, skipped: 1 }, 1000)).toBe(
-      `1 other bookmark wasn't imported. Your library is at its ${(1000).toLocaleString()}-bookmark limit.`,
-    );
-    expect(importSubtext({ ...partial, restored: 0, duplicates: 0 }, 100)).toBe(
-      "47 bookmarks weren't imported. Your library is at its 100-bookmark limit.",
-    );
-    expect(importSubtext({ ...nothing, duplicates: 0, skipped: 1 }, 1000)).toBe(
-      `1 bookmark could not be imported. Your library is at its ${(1000).toLocaleString()}-bookmark limit.`,
-    );
-    expect(importSubtext(partial)).toMatch(/^47 could not be imported\. /);
-    for (const result of [partial, nothing]) {
-      const said = [importHeading(result), importSubtext(result, 100), ...importCounts(result)];
-      expect(said.filter((line) => line.includes("47"))).toHaveLength(1);
+  it("says each number once on the screen", () => {
+    for (const result of [partial, nothing, here]) {
+      const said = [importHeading(result), ...importLines(result, 100)].join(" ");
+      for (const n of [result.imported + result.restored, result.imported, result.restored, result.duplicates, result.skipped])
+        if (n > 0) expect(said.match(new RegExp(`\\b${n}\\b`, "g")), `${n} in "${said}"`).toHaveLength(1);
+      expect(said).not.toMatch(/other|came over|weren't/);
     }
   });
 
@@ -107,16 +120,6 @@ describe("the result screen's decisions", () => {
     for (const result of [partial, here, nothing]) expect(importSample(result, sent, 8)).toEqual([]);
   });
 
-  it("lists only the counts that aren't zero", () => {
-    expect(importCounts(partial)).toEqual([
-      "4 new",
-      "2 restored from Trash",
-      "11 already in your library",
-    ]);
-    expect(importCounts(all)).toEqual([`${(1280).toLocaleString()} new`, "4 restored from Trash"]);
-    expect(importCounts(here)).toEqual(["64 already in your library"]);
-  });
-
   it("blames the plan's limit only when the library has reached it", () => {
     expect(reachedPlanLimit(partial, { bookmarkCount: 100, limit: 100 })).toBe(100);
     expect(reachedPlanLimit(partial, { bookmarkCount: 96, limit: 100 })).toBeNull();
@@ -125,8 +128,8 @@ describe("the result screen's decisions", () => {
     expect(reachedPlanLimit(partial, undefined)).toBeNull();
   });
 
-  it("heads the sample as the selection unless everything picked came over", () => {
-    expect(sampleTitle(all)).toBe("Some of what came over");
+  it("heads the sample as the selection unless everything picked was imported", () => {
+    expect(sampleTitle(all)).toBe("Some of what was imported");
     expect(sampleTitle(partial)).toBe("Some of what you picked");
     expect(sampleTitle({ ...all, duplicates: 2 })).toBe("Some of what you picked");
   });

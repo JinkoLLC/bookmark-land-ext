@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/chrome-extension";
 import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/api";
@@ -161,6 +161,8 @@ function Wizard() {
     result: ImportResult;
     sent: { url: string; title?: string }[];
   } | null>(null);
+  // Back from a result: "Import more" is gone, so step 1's heading takes the focus.
+  const [returned, setReturned] = useState(false);
   const runImport = useAction(api.importTree.importTree);
   // Session summary — remaining allowance for the over-limit warning.
   const sessionSummary = useQuery(api.subscriptions.getSubscriptionInfo);
@@ -238,6 +240,7 @@ function Wizard() {
           // The next run gets its own collection.
           setImportedName(importedCollectionName(new Date()));
           setSummary(null);
+          setReturned(true);
           setPhase("preview");
         }}
       />
@@ -294,7 +297,7 @@ function Wizard() {
 
   return (
     <div className="flex flex-col gap-4">
-      <Step number={1} title="Choose folders to import" hint="Untick anything you want to leave behind.">
+      <Step number={1} title="Choose folders to import" hint="Untick anything you want to leave behind." focusTitle={returned}>
         {model.mergedFolderIds.length > 0 && (
           <p className="mb-2 break-words text-sm text-slate-700 dark:text-slate-200">
             {allMerge
@@ -410,9 +413,11 @@ function Wizard() {
             {phase === "importing" && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
             {phase === "importing"
               ? "Importing…"
-              : nothingSelected && !nothingImportable
-                ? "Select at least one folder"
-                : `Import ${count} bookmark${model.importableCount === 1 ? "" : "s"}`}
+              : nothingImportable
+                ? "No bookmarks to import"
+                : nothingSelected
+                  ? "Select at least one folder"
+                  : `Import ${count} bookmark${model.importableCount === 1 ? "" : "s"}`}
           </button>
           {warning && (
             <button
@@ -428,8 +433,9 @@ function Wizard() {
 
       <p className="px-1 text-center text-xs text-slate-600 dark:text-slate-300">
         {count} selected
-        {/* When every folder merges, step 1's notice has said so. */}
+        {/* When every folder merges, step 1's notice has said so; with nothing to send, no collection is made. */}
         {!allMerge &&
+          !nothingSelected &&
           ` · ${formatCount(model.folders.length)} new collection${model.folders.length === 1 ? "" : "s"}`}
         {model.excludedSchemeCount > 0 &&
           ` · ${formatCount(model.excludedSchemeCount)} left out (not web pages)`}
@@ -446,14 +452,21 @@ function Step({
   title,
   hint,
   dimmed = false,
+  focusTitle = false,
   children,
 }: {
   number: number;
   title: string;
   hint?: string;
   dimmed?: boolean;
+  /** Focus the title when the step appears. */
+  focusTitle?: boolean;
   children: ReactNode;
 }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (focusTitle) heading.current?.focus();
+  }, [focusTitle]);
   return (
     <section
       aria-labelledby={`import-step-${number}`}
@@ -473,7 +486,9 @@ function Step({
         <div>
           <h2
             id={`import-step-${number}`}
-            className="font-semibold text-emerald-950 dark:text-emerald-100"
+            ref={heading}
+            tabIndex={focusTitle ? -1 : undefined}
+            className={`rounded font-semibold text-emerald-950 dark:text-emerald-100 ${FOCUS_RING}`}
           >
             <span className="sr-only">Step {number}: </span>
             {title}

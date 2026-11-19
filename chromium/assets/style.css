@@ -84,7 +84,7 @@
 .tiptap-extension-editor ul[data-type="taskList"] > li > label {
   flex: 0 0 auto;
   user-select: none;
-  /* A 24 px target around the 13 px checkbox, centred on the task's first line. */
+  /* A 24 px box, centred on the task's first line. */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -92,6 +92,46 @@
   width: 24px;
   height: 24px;
   margin-block: calc((1lh - 24px) / 2);
+}
+
+/* The checkbox itself is the 24 px target; its mark is drawn at 16 px inside. */
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--ring);
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]::before,
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]::after {
+  content: "";
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]::before {
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]:checked::before {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]:checked::after {
+  background: var(--primary-foreground);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5'/%3E%3C/svg%3E") center / contain no-repeat;
 }
 
 .tiptap-extension-editor ul[data-type="taskList"] > li > div {
