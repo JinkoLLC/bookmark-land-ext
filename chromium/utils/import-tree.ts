@@ -9,7 +9,8 @@ import { isSaveableUrl } from "./quick-save";
  *   Collections; subfolders become subcollections.
  * - Loose bookmarks sitting directly on a root are gathered into a synthetic
  *   collection named after that root.
- * - Non-web schemes are excluded upfront and counted.
+ * - Non-web schemes and overlong web addresses are excluded upfront and
+ *   counted, each on its own.
  * - Folders nested beyond the 5-level collection limit don't become
  *   collections; their bookmarks merge into the deepest ancestor within the
  *   limit (depth 4). The preview marks those folders as merged and names
@@ -44,6 +45,8 @@ export interface ImportModel {
   bookmarks: PayloadBookmark[];
   importableCount: number;
   excludedSchemeCount: number;
+  /** Web addresses the library can't hold: longer than a saveable address. */
+  excludedTooLongCount: number;
   /** Folder ids (native) beyond the depth limit, merged into an ancestor —
    * the preview marks these. */
   mergedFolderIds: string[];
@@ -80,10 +83,17 @@ export function buildImportModel(
   const mergedFolderIds: string[] = [];
   const mergedInto: Record<string, string> = {};
   let excludedSchemeCount = 0;
+  let excludedTooLongCount = 0;
+
+  // A web address that isn't saveable can only be over the length limit.
+  const countExcluded = (url: string | undefined) => {
+    if (/^https?:\/\//.test(url ?? "")) excludedTooLongCount += 1;
+    else excludedSchemeCount += 1;
+  };
 
   const emitBookmark = (node: NativeNode, folderKey: string | undefined) => {
     if (!isSaveableUrl(node.url)) {
-      excludedSchemeCount += 1;
+      countExcluded(node.url);
       return;
     }
     bookmarks.push({
@@ -156,7 +166,7 @@ export function buildImportModel(
     for (const child of children) {
       if (child.url !== undefined) {
         if (!isSaveableUrl(child.url)) {
-          excludedSchemeCount += 1;
+          countExcluded(child.url);
           continue;
         }
         emitBookmark(child, ensureRootFolder());
@@ -171,6 +181,7 @@ export function buildImportModel(
     bookmarks,
     importableCount: bookmarks.length,
     excludedSchemeCount,
+    excludedTooLongCount,
     mergedFolderIds,
     mergedInto,
   };

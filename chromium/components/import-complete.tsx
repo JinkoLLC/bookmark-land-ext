@@ -79,8 +79,6 @@ export function ImportComplete({
     }
   };
   const shown = importSample(result, sample, SAMPLE_SIZE);
-  // Nothing came over because the plan is full: upgrading is the way forward.
-  const upgradeFirst = planLimit !== null && outcome === "nothing";
   const title = sampleTitle(result);
   const counts = importCounts(result);
 
@@ -168,17 +166,12 @@ export function ImportComplete({
       )}
 
       <div className="relative flex flex-wrap items-center justify-center gap-3">
-        {upgradeFirst && (
-          <button type="button" onClick={() => openWebPath("/settings")} className={FILLED_BUTTON}>
-            Upgrade
-          </button>
-        )}
         <button
           type="button"
           onClick={() =>
             returnTabId !== null ? void backToSetup(returnTabId) : openWebPath(libraryPath)
           }
-          className={upgradeFirst ? OUTLINE_BUTTON : FILLED_BUTTON}
+          className={FILLED_BUTTON}
         >
           {returnTabId !== null
             ? "Back to setup"
@@ -187,7 +180,7 @@ export function ImportComplete({
               : "Open my library"}
           <ArrowRight className="h-4 w-4 shrink-0" aria-hidden="true" />
         </button>
-        {planLimit !== null && !upgradeFirst && (
+        {planLimit !== null && (
           <button type="button" onClick={() => openWebPath("/settings")} className={OUTLINE_BUTTON}>
             Upgrade
           </button>

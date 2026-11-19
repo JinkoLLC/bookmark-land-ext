@@ -422,6 +422,8 @@ function Wizard() {
           ` · ${formatCount(model.folders.length)} new collection${model.folders.length === 1 ? "" : "s"}`}
         {model.excludedSchemeCount > 0 &&
           ` · ${formatCount(model.excludedSchemeCount)} left out (not web pages)`}
+        {model.excludedTooLongCount > 0 &&
+          ` · ${formatCount(model.excludedTooLongCount)} left out (address too long)`}
       </p>
     </div>
   );

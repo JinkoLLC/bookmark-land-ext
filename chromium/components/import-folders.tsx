@@ -77,7 +77,7 @@ export function FolderCheckbox({
         checked={!parentExcluded && !excluded.has(id)}
         disabled={parentExcluded}
         onChange={() => onToggle(id)}
-        className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-700 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        className="mt-0.5 h-4 w-4 shrink-0 accent-emerald-700 dark:accent-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
       />
       <span className="min-w-0 flex-1">
         <span className={`block break-words ${bold ? "font-semibold" : ""}`}>{label}</span>

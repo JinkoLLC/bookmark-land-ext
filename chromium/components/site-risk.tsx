@@ -1,11 +1,15 @@
-import { useMemo, useState } from "react";
-import { useQueries, useQuery } from "convex/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueries } from "convex/react";
 import { api } from "@convex/api";
 import { siteBatches } from "@/utils/site-batches";
 import type { FunctionReturnType } from "convex/server";
 import { ChevronDown, ShieldAlert, X } from "lucide-react";
+import { StatusLine } from "@/components/status-line";
 
 export type SiteRisk = FunctionReturnType<typeof api.siteSecurity.flaggedSites>[number];
+type SiteDetail = FunctionReturnType<typeof api.siteSecurity.siteDetail>;
+
+const RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 // Same wording as the web badge.
 // flaggedSites only returns these three levels.
@@ -153,7 +157,9 @@ export function SiteRiskToggle({
 /**
  * The box that slides down under a flagged Bookmark row: the level and what
  * it means, the software found and its known issues, and when the site was
- * last checked. Loads `siteDetail` only while open.
+ * last checked. Loads `siteDetail` only while open; a failed load is said
+ * here, with a Retry, and never reaches the surface's error boundary (which
+ * would replace a confirmed save with "Unable to load your library").
  */
 export function SiteRiskDetails({
   risk,
@@ -168,7 +174,21 @@ export function SiteRiskDetails({
    * carries the toggle: no own frame, title or close button. */
   embedded?: boolean;
 }) {
-  const detail = useQuery(api.siteSecurity.siteDetail, { site: risk.site });
+  // Dropping the subscription for one render makes the server answer afresh.
+  const [dropped, setDropped] = useState(false);
+  useEffect(() => {
+    if (dropped) setDropped(false);
+  }, [dropped]);
+  const queries = useMemo(() => {
+    const wanted: Parameters<typeof useQueries>[0] = {};
+    if (!dropped) wanted.detail = { query: api.siteSecurity.siteDetail, args: { site: risk.site } };
+    return wanted;
+  }, [dropped, risk.site]);
+  // useQueries hands a failed load back as a value, where useQuery would throw.
+  const result = useQueries(queries).detail as SiteDetail | Error | undefined;
+  const failed = result instanceof Error;
+  const detail = failed ? undefined : result;
+  const region = useRef<HTMLDivElement>(null);
   const amber = risk.riskLevel !== "possiblyAffected";
   const frame = embedded
     ? "mt-2 border-t border-current/15 pt-2"
@@ -180,20 +200,26 @@ export function SiteRiskDetails({
 
   return (
     <div
+      ref={region}
       id={id}
       role="region"
       aria-label={`Site security for ${risk.site}`}
       // In the popup the details scroll with the middle region; a stop of
       // their own lets the keyboard land on them and bring them into view.
-      tabIndex={embedded ? 0 : undefined}
-      className={`bl-slide-down text-xs ${embedded ? "rounded focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring " : ""}${frame}`}
+      // In the panel they only take focus when Retry goes away.
+      tabIndex={embedded ? 0 : -1}
+      className={`bl-slide-down text-xs ${RING} ${embedded ? "rounded " : ""}${frame}`}
     >
       {!embedded && (
         <div className="flex items-start justify-between gap-2">
           <p className="font-semibold">Site security: {LEVEL_LABEL[risk.riskLevel]}</p>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              onClose();
+              // This button goes with the box: focus returns to the row's shield button, which opened it.
+              document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(id)}"]`)?.focus();
+            }}
             aria-label="Close"
             className="-m-1 flex h-6 w-6 shrink-0 items-center justify-center rounded opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
@@ -203,7 +229,26 @@ export function SiteRiskDetails({
       )}
       <p className={embedded ? "opacity-80" : "mt-0.5 opacity-80"}>{LEVEL_MEANING[risk.riskLevel]}</p>
 
-      {detail === undefined && <p className="mt-2 opacity-70">Loading details…</p>}
+      {failed ? (
+        <div className="mt-2 flex items-center gap-2">
+          <StatusLine tone="error" role="alert" className="min-w-0 flex-1">
+            Couldn&apos;t load the security details.
+          </StatusLine>
+          <button
+            type="button"
+            onClick={() => {
+              // This button goes away while the answer loads: focus stays in the details.
+              region.current?.focus();
+              setDropped(true);
+            }}
+            className={`min-h-6 shrink-0 rounded-md border border-current/30 px-2 font-medium hover:bg-current/10 ${RING}`}
+          >
+            Retry
+          </button>
+        </div>
+      ) : (
+        detail === undefined && <p className="mt-2 opacity-70">Loading details…</p>
+      )}
       {detail && detail.detectedSoftware.length > 0 && (
         <ul className="mt-2 space-y-1.5">
           {detail.detectedSoftware.map((software) => (

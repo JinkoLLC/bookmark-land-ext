@@ -69,9 +69,27 @@ describe("buildImportModel", () => {
     const model = buildImportModel(roots, NONE);
     expect(model.importableCount).toBe(1);
     expect(model.excludedSchemeCount).toBe(3);
+    expect(model.excludedTooLongCount).toBe(0);
     expect(model.bookmarks).toEqual([
       { url: "https://ok.com/", title: "t-103", folderKey: "10" },
     ]);
+  });
+
+  it("counts overlong web addresses apart from non-web schemes", () => {
+    const long = `https://long.example/${"a".repeat(2048)}`;
+    const roots = [
+      folder("1", "Bar", [
+        bm("100", long),
+        bm("101", "chrome://settings"),
+        folder("10", "F", [bm("102", long), bm("103", "https://ok.com/")]),
+      ]),
+    ];
+    const model = buildImportModel(roots, NONE);
+    expect(model.importableCount).toBe(1);
+    expect(model.excludedSchemeCount).toBe(1);
+    expect(model.excludedTooLongCount).toBe(2);
+    // Nothing loose on the root was kept, so it gets no collection of its own.
+    expect(model.folders.map((f) => f.key)).toEqual(["10"]);
   });
 
   it("excluding a folder drops its whole subtree; excluding a root drops the root", () => {
