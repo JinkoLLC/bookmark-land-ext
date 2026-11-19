@@ -83,7 +83,8 @@ export function ImportWizard() {
             </div>
           </div>
 
-          <div className="min-w-0 rounded-3xl border border-white/70 bg-white/85 p-4 shadow-2xl shadow-emerald-950/15 backdrop-blur-xl sm:p-5 dark:border-white/10 dark:bg-slate-950/80 dark:shadow-black/40">
+          {/* The result is short: its card sizes to it instead of stretching to the intro's height. */}
+          <div className="min-w-0 has-[[data-import-result]]:self-start rounded-3xl border border-white/70 bg-white/85 p-4 shadow-2xl shadow-emerald-950/15 backdrop-blur-xl sm:p-5 dark:border-white/10 dark:bg-slate-950/80 dark:shadow-black/40">
             {state === "loading" && <LoadingPanel />}
             {state === "stalled" && <AuthStalled />}
             {state === "signed-out" && <SignedOut />}
@@ -293,12 +294,13 @@ function Wizard() {
             into…’ goes into the nearest collection above it.
           </p>
         )}
-        {/* p-1: room for the checkboxes' focus ring inside the scroll box. */}
+        {/* p-1: room for the checkboxes' focus ring inside the scroll box.
+            Below md the list has no cap: only the page scrolls. */}
         {/* Locked while importing, like the destination: the selection was already sent. */}
         <fieldset
           disabled={phase === "importing"}
           aria-labelledby="import-step-1"
-          className="max-h-[26rem] min-w-0 space-y-2 overflow-y-auto p-1"
+          className="min-w-0 space-y-2 p-1 md:max-h-[26rem] md:overflow-y-auto"
         >
           {roots.map((root) => (
             <section

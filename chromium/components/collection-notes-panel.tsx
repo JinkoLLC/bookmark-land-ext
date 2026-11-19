@@ -1,8 +1,18 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  createElement,
+  Fragment,
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Doc } from "@convex/dataModel";
 import { browser } from "wxt/browser";
 import { ArrowLeft, BookOpen, ExternalLink, PencilLine } from "lucide-react";
 import { CollectionGlyph } from "@/components/collection-glyph";
+import { NOTE_READER_TAGS, safeNoteHref } from "@/utils/collection-note-html";
 
 type NoteCollection = Pick<
   Doc<"collections">,
@@ -91,7 +101,7 @@ export function CollectionNotesPanel({
     return (
       <FullPageReader
         collection={collection}
-        noteText={noteText}
+        noteHtml={collection.notes ?? ""}
         onBack={() => setMode("strip")}
         onEdit={() => setMode("edit")}
         onOpenWeb={openWeb}
@@ -184,7 +194,7 @@ function PinnedStrip({
           Note for {collection.name}
         </span>
         <span className="text-xs text-neutral-500 dark:text-neutral-400">
-          {expanded ? "Hide" : "Read"}
+          {expanded ? "Hide note" : "Show note"}
         </span>
       </button>
       {expanded && (
@@ -214,13 +224,13 @@ function PinnedStrip({
 
 function FullPageReader({
   collection,
-  noteText,
+  noteHtml,
   onBack,
   onEdit,
   onOpenWeb,
 }: {
   collection: NoteCollection;
-  noteText: string;
+  noteHtml: string;
   onBack: () => void;
   onEdit: () => void;
   onOpenWeb: () => void;
@@ -267,13 +277,67 @@ function FullPageReader({
         aria-label={`Note for ${collection.name}`}
         className="min-h-0 flex-1 overflow-y-auto px-4 py-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       >
-        <div className="mx-auto max-w-prose">
-          <p className="whitespace-pre-wrap text-sm leading-6 text-neutral-700 dark:text-neutral-200">
-            {noteText}
-          </p>
+        {/* The editor's typography, without its focus outline or minimum height. */}
+        <div className="tiptap-extension-editor mx-auto max-w-prose text-sm leading-6 text-neutral-700 focus-within:outline-none! dark:text-neutral-200 [&>*+*]:mt-2">
+          {noteContent(noteHtml)}
         </div>
       </article>
     </section>
+  );
+}
+
+/** The note as React elements: only the tags and link targets the editor writes. */
+function noteContent(html: string): ReactNode {
+  // Plain text (a note written before the editor) keeps its line breaks.
+  if (!/<[a-z]/i.test(html)) return <p className="whitespace-pre-wrap">{html.trim()}</p>;
+  const { body } = new DOMParser().parseFromString(html, "text/html");
+  return [...body.childNodes].map(noteNode);
+}
+
+function noteNode(node: ChildNode, key: number): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const element = node as Element;
+  const tag = element.tagName.toLowerCase();
+  if (tag === "script" || tag === "style") return null;
+  const children = [...element.childNodes].map(noteNode);
+  const href = tag === "a" ? safeNoteHref(element.getAttribute("href")) : null;
+  // Anything else keeps its text and loses its markup.
+  if (!NOTE_READER_TAGS.has(tag) || (tag === "a" && !href)) {
+    // The editor has no level-one heading; the web app's shows as the top level here.
+    return tag === "h1" ? <h2 key={key}>{children}</h2> : <Fragment key={key}>{children}</Fragment>;
+  }
+  if (tag === "br" || tag === "hr") return createElement(tag, { key });
+  if (tag === "input") {
+    return (
+      <input
+        key={key}
+        type="checkbox"
+        disabled
+        checked={element.hasAttribute("checked")}
+        aria-label={element.closest("li")?.textContent?.trim()}
+      />
+    );
+  }
+  if (tag === "a") {
+    return (
+      <a
+        key={key}
+        href={href!}
+        target="_blank"
+        rel="noreferrer"
+        className="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        {children}
+      </a>
+    );
+  }
+  // The task-list rules in the stylesheet hang on data-type.
+  const type = element.getAttribute("data-type");
+  return createElement(
+    tag,
+    { key, "data-type": type === "taskList" || type === "taskItem" ? type : undefined },
+    ...children,
   );
 }
 
