@@ -427,7 +427,8 @@ function BookmarkRow({
           type="button"
           onClick={() => void browser.tabs.create({ url: row.url })}
           className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          title={row.url}
+          // The title is cut to one line in the row: the tooltip has all of it, then the address.
+          title={`${row.title}\n${row.url}`}
         >
           {row.favicon ? (
             <img src={row.favicon} alt="" className="h-4 w-4 shrink-0" />

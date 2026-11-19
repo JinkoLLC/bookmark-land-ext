@@ -68,9 +68,7 @@ export function importHeading(result: ImportResult): string {
     case "imported":
       return `${added} imported`;
     case "partial":
-      // The skipped count and its cause are the subtext's; said once.
-      // "came over", not "imported": the counts line splits it into new and restored.
-      return `Only ${added} came over`;
+      return `${added} imported, ${formatCount(result.skipped)} could not be imported`;
     case "already-here":
       return "Already all here";
     case "nothing":
@@ -78,34 +76,35 @@ export function importHeading(result: ImportResult): string {
   }
 }
 
-/** `planLimit`: the plan's bookmark limit, when the library is at it after the import. */
-export function importSubtext(result: ImportResult, planLimit: number | null = null): string {
+/**
+ * The lines under the heading, only those that apply. Each count is said
+ * once on the screen, so a line never repeats a number the heading gave.
+ * `planLimit`: the plan's bookmark limit, when the library is at it after the import.
+ */
+export function importLines(result: ImportResult, planLimit: number | null = null): string[] {
   const outcome = importOutcome(result);
+  const lines: string[] = [];
   if (outcome === "imported")
-    return "Your library just grew. Everything is searchable on bookmark.land and in the Library panel.";
-  if (outcome === "already-here")
-    return "Every bookmark you picked was already in your library, so nothing new was added.";
-  // Two facts side by side, not a cause: the result doesn't say why each bookmark was skipped.
-  const atLimit = planLimit === null ? "" : ` Your library is at its ${formatCount(planLimit)}-bookmark limit.`;
-  if (outcome === "nothing") return `${bookmarks(result.skipped)} could not be imported.${atLimit}`;
-  if (planLimit !== null) {
-    // "other": apart from the restored and already-saved ones the counts line lists.
-    const other = result.restored + result.duplicates > 0 ? "other " : "";
-    return `${formatCount(result.skipped)} ${other}bookmark${result.skipped === 1 ? " wasn't" : "s weren't"} imported.${atLimit}`;
+    lines.push("Your library just grew. Everything is searchable on bookmark.land and in the Library panel.");
+  if (outcome === "nothing") lines.push(`${bookmarks(result.skipped)} could not be imported.`);
+  // Without restored ones the heading's number is the whole story.
+  if (result.restored > 0) {
+    const parts: [number, string][] = [
+      [result.imported, "new"],
+      [result.restored, "restored from Trash"],
+    ];
+    lines.push(
+      `Imported: ${parts
+        .filter(([n]) => n > 0)
+        .map(([n, label]) => `${formatCount(n)} ${label}`)
+        .join(" · ")}`,
+    );
   }
-  // Counts the rest of the selection, after the heading's bookmarks.
-  return `${formatCount(result.skipped)} could not be imported. What came over is searchable on bookmark.land and in the Library panel.`;
-}
-
-/** The counts line: only the counts that aren't zero. The skipped count is
- * left out: the subtext always states it. */
-export function importCounts(result: ImportResult): string[] {
-  const parts: [number, string][] = [
-    [result.imported, "new"],
-    [result.restored, "restored from Trash"],
-    [result.duplicates, "already in your library"],
-  ];
-  return parts.filter(([n]) => n > 0).map(([n, label]) => `${formatCount(n)} ${label}`);
+  if (result.duplicates > 0)
+    lines.push(`${formatCount(result.duplicates)} ${result.duplicates === 1 ? "was" : "were"} already in your library.`);
+  // A fact beside the skips, not their cause: the result doesn't say why each was skipped.
+  if (planLimit !== null) lines.push(`Your library is at its ${formatCount(planLimit)}-bookmark limit.`);
+  return lines;
 }
 
 /**
@@ -121,18 +120,18 @@ export function reachedPlanLimit(
   return library.bookmarkCount >= library.limit ? library.limit : null;
 }
 
-/** The sample is drawn from the selection, so it is only called "what came
- * over" when every picked bookmark did. */
+/** The sample is drawn from the selection, so it is only called "what was
+ * imported" when every picked bookmark was. */
 export function sampleTitle(result: ImportResult): string {
   return result.skipped > 0 || result.duplicates > 0
     ? "Some of what you picked"
-    : "Some of what came over";
+    : "Some of what was imported";
 }
 
 /**
  * The rows of the sample list, from the bookmarks that were sent. Only a
  * complete import shows it: the sample is drawn from the selection, so after
- * skips it could list bookmarks that didn't come over. One row per address
+ * skips it could list bookmarks that weren't imported. One row per address
  * (the same page can sit in two folders) and per title.
  */
 export function importSample<T extends { url: string; title?: string }>(

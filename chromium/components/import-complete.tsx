@@ -3,12 +3,11 @@ import { browser } from "wxt/browser";
 import { ArrowRight, Check, CircleAlert, FolderOpen, PartyPopper } from "lucide-react";
 import {
   formatCount,
-  importCounts,
   importHeading,
+  importLines,
   importLinks,
   importSample,
   importOutcome,
-  importSubtext,
   sampleTitle,
   type ImportResult,
 } from "@/utils/import-result";
@@ -42,7 +41,7 @@ const ICONS = {
 
 /**
  * The Browser import's last screen: a celebration when everything picked
- * came over (confetti, the count, a peek at what arrived, links to the new
+ * was imported (confetti, the count, a peek at what arrived, links to the new
  * collections), and a plain account of it when some or all did not.
  */
 export function ImportComplete({
@@ -80,7 +79,7 @@ export function ImportComplete({
   };
   const shown = importSample(result, sample, SAMPLE_SIZE);
   const title = sampleTitle(result);
-  const counts = importCounts(result);
+  const lines = importLines(result, planLimit);
 
   // The outcome is read first, by sighted and screen-reader users alike.
   const heading = useRef<HTMLHeadingElement>(null);
@@ -105,14 +104,12 @@ export function ImportComplete({
         >
           {importHeading(result)}
         </h2>
-        <p className="mt-2 text-sm text-slate-600 dark:text-slate-300">{importSubtext(result, planLimit)}</p>
+        <div className="mt-2 space-y-1 text-sm text-slate-600 dark:text-slate-300">
+          {lines.map((line) => (
+            <p key={line}>{line}</p>
+          ))}
+        </div>
       </div>
-
-      {counts.length > 0 && (
-        <p className="relative text-center text-sm text-slate-600 dark:text-slate-300">
-          {counts.join(" · ")}
-        </p>
-      )}
 
       {shown.length > 0 && (
         <section aria-label={title} className="relative min-w-0">
@@ -185,16 +182,7 @@ export function ImportComplete({
             Upgrade
           </button>
         )}
-        <button
-          type="button"
-          onClick={onImportMore}
-          // Beside Upgrade it takes the same outline: one style per row of secondary actions.
-          className={
-            planLimit !== null
-              ? OUTLINE_BUTTON
-              : `inline-flex min-h-6 items-center rounded px-1 text-sm font-medium text-emerald-800 underline-offset-4 hover:underline dark:text-emerald-200 ${FOCUS_RING}`
-          }
-        >
+        <button type="button" onClick={onImportMore} className={OUTLINE_BUTTON}>
           Import more
         </button>
       </div>

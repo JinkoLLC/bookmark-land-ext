@@ -117,7 +117,6 @@ export function CollectionNotesPanel({
       onToggle={() => setExpanded((value) => !value)}
       onViewFull={() => setMode("full")}
       onEdit={() => setMode("edit")}
-      onOpenWeb={openWeb}
     />
   );
 }
@@ -173,7 +172,6 @@ function PinnedStrip({
   onToggle,
   onViewFull,
   onEdit,
-  onOpenWeb,
 }: {
   collection: NoteCollection;
   noteHtml: string;
@@ -181,7 +179,6 @@ function PinnedStrip({
   onToggle: () => void;
   onViewFull: () => void;
   onEdit: () => void;
-  onOpenWeb: () => void;
 }) {
   return (
     <section className="mx-2 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
@@ -217,10 +214,6 @@ function PinnedStrip({
             </button>
             <button type="button" data-note-action="edit" onClick={onEdit} className={OUTLINE_BUTTON}>
               Edit
-            </button>
-            <button type="button" onClick={onOpenWeb} className={OUTLINE_BUTTON}>
-              Open in bookmark.land
-              <ExternalLink className="h-3 w-3" aria-hidden="true" />
             </button>
           </div>
         </div>
