@@ -52,21 +52,38 @@ export function destinationBaseDepth(
 /**
  * Maps the UI choice to the action argument. Returns null while the choice
  * is incomplete (no collection picked yet / blank new-collection name) —
- * the Import button stays disabled. `now` names the default destination.
+ * the Import button stays disabled. `importedName` is the default
+ * destination's name, made once per run so the label and the import agree.
  */
 export function destinationArgFor(
   destination: ImportDestination,
-  now: Date = new Date(),
+  importedName: string,
 ): DestinationArg | null {
   switch (destination.kind) {
     case "imported":
-      return { type: "create", name: importedCollectionName(now) };
+      return { type: "create", name: importedName };
     case "new": {
       const name = destination.name.trim();
       return name ? { type: "create", name } : null;
     }
     case "existing":
       return destination.id ? { type: "collection", id: destination.id } : null;
+  }
+}
+
+/** What the preview calls the destination, for the folders that merge straight into it. */
+export function destinationName(
+  destination: ImportDestination,
+  importedName: string,
+  options: { id: string; name: string; depth: number }[],
+): string {
+  switch (destination.kind) {
+    case "imported":
+      return importedName;
+    case "new":
+      return destination.name.trim() || "the new collection";
+    case "existing":
+      return collectionWithPath(options, destination.id)?.name ?? "the collection you choose";
   }
 }
 

@@ -6,14 +6,16 @@ import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
 import { CircleAlert, FolderOpen, Leaf, Loader2 } from "lucide-react";
 import {
+  allFoldersMerge,
   buildImportModel,
   type NativeNode,
 } from "@/utils/import-tree";
 import {
   DEFAULT_DESTINATION,
-  collectionWithPath,
   destinationArgFor,
   destinationBaseDepth,
+  destinationName as destinationNameFor,
+  importedCollectionName,
   type ImportDestination,
 } from "@/utils/import-destination";
 import { buildCollectionOptions, livePageCounts } from "@/utils/organize";
@@ -147,6 +149,8 @@ function Wizard() {
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
   const [destination, setDestination] =
     useState<ImportDestination>(DEFAULT_DESTINATION);
+  // Made once per run: the label, the merge lines and the import use the same name.
+  const [importedName, setImportedName] = useState(() => importedCollectionName(new Date()));
   const [phase, setPhase] = useState<"preview" | "importing" | "done" | "failed">(
     "preview",
   );
@@ -189,12 +193,7 @@ function Wizard() {
     (id) => options.find((o) => o.id === id)?.depth,
   );
   // Named for the folders that merge straight into the destination.
-  const destinationName =
-    destination.kind === "imported"
-      ? "the new collection"
-      : destination.kind === "new"
-        ? destination.name.trim() || "the new collection"
-        : (collectionWithPath(options, destination.id)?.name ?? "the collection you choose");
+  const destinationName = destinationNameFor(destination, importedName, options);
   const model = useMemo(
     () =>
       Array.isArray(roots)
@@ -202,7 +201,7 @@ function Wizard() {
         : null,
     [roots, excluded, baseDepth, destinationName],
   );
-  const destinationArg = destinationArgFor(destination);
+  const destinationArg = destinationArgFor(destination, importedName);
   // An existing collection may be shown on a live page: no import before its notice can appear.
   const feedsPending = destination.kind === "existing" && collectionFeeds === undefined;
 
@@ -234,6 +233,8 @@ function Wizard() {
         planLimit={reachedPlanLimit(summary.result, sessionSummary)}
         returnTabId={parseReturnTabId(window.location.search)}
         onImportMore={() => {
+          // The next run gets its own collection.
+          setImportedName(importedCollectionName(new Date()));
           setSummary(null);
           setPhase("preview");
         }}
@@ -251,8 +252,7 @@ function Wizard() {
   };
 
   const start = async () => {
-    // Re-derived so the default collection is named after the click.
-    const arg = destinationArgFor(destination, new Date());
+    const arg = destinationArg;
     if (!arg || phase === "importing" || feedsPending) return;
     setPhase("importing");
     try {
@@ -282,6 +282,9 @@ function Wizard() {
     : null;
 
   const count = formatCount(model.importableCount);
+  // One target for every folder: the notice names it once and the rows stay bare.
+  const allMerge = allFoldersMerge(model);
+  const mergedRows = allMerge ? {} : model.mergedInto;
   const openUpgrade = () =>
     void browser.tabs.create({ url: `${import.meta.env.WXT_WEB_APP_URL}/settings` });
 
@@ -289,9 +292,10 @@ function Wizard() {
     <div className="flex flex-col gap-4">
       <Step number={1} title="Choose folders to import" hint="Untick anything you want to leave behind.">
         {model.mergedFolderIds.length > 0 && (
-          <p className="mb-2 text-sm text-slate-700 dark:text-slate-200">
-            Collections nest up to five levels. A folder that says ‘merges
-            into…’ goes into the nearest collection above it.
+          <p className="mb-2 break-words text-sm text-slate-700 dark:text-slate-200">
+            {allMerge
+              ? `All folders merge into ${destinationName}: collections nest up to five levels.`
+              : "Collections nest up to five levels. A folder that says ‘merges into…’ goes into the nearest collection above it."}
           </p>
         )}
         {/* p-1: room for the checkboxes' focus ring inside the scroll box.
@@ -314,7 +318,7 @@ function Wizard() {
                 parentExcluded={false}
                 onToggle={toggle}
                 bold
-                mergesInto={model.mergedInto[root.id]}
+                mergesInto={mergedRows[root.id]}
               />
               <div className="mt-1">
                 {(root.children ?? [])
@@ -326,7 +330,7 @@ function Wizard() {
                       depth={1}
                       excluded={excluded}
                       parentExcluded={excluded.has(root.id)}
-                      merged={model.mergedInto}
+                      merged={mergedRows}
                       onToggle={toggle}
                     />
                   ))}
@@ -345,6 +349,7 @@ function Wizard() {
         <DestinationPicker
           value={destination}
           onChange={setDestination}
+          importedName={importedName}
           options={options}
           onPage={livePageCounts(collectionFeeds)}
           loading={collections === undefined}
@@ -411,10 +416,10 @@ function Wizard() {
       </Step>
 
       <p className="px-1 text-center text-xs text-slate-600 dark:text-slate-300">
-        {count} selected ·{" "}
-        {model.folders.length === 0 && !nothingSelected
-          ? `all folders merge into ${destinationName}`
-          : `${formatCount(model.folders.length)} new collection${model.folders.length === 1 ? "" : "s"}`}
+        {count} selected
+        {/* When every folder merges, step 1's notice has said so. */}
+        {!allMerge &&
+          ` · ${formatCount(model.folders.length)} new collection${model.folders.length === 1 ? "" : "s"}`}
         {model.excludedSchemeCount > 0 &&
           ` · ${formatCount(model.excludedSchemeCount)} left out (not web pages)`}
       </p>

@@ -71,10 +71,17 @@ describe("the result screen's decisions", () => {
   });
 
   it("says the skipped count once, and the plan's limit beside it (not as its cause) when reached", () => {
-    const atLimit = "47 bookmarks weren't imported. Your library is at its 100-bookmark limit.";
+    // "other" keeps the skipped apart from the restored and already-saved ones in the counts line.
+    const atLimit = "47 other bookmarks weren't imported. Your library is at its 100-bookmark limit.";
     expect(importSubtext(partial, 100)).toBe(atLimit);
     expect(importSubtext(nothing, 100)).toBe(atLimit);
     expect(importSubtext({ ...nothing, skipped: 1 }, 1000)).toBe(
+      "1 other bookmark wasn't imported. Your library is at its 1,000-bookmark limit.",
+    );
+    expect(importSubtext({ ...partial, restored: 0, duplicates: 0 }, 100)).toBe(
+      "47 bookmarks weren't imported. Your library is at its 100-bookmark limit.",
+    );
+    expect(importSubtext({ ...nothing, duplicates: 0, skipped: 1 }, 1000)).toBe(
       "1 bookmark wasn't imported. Your library is at its 1,000-bookmark limit.",
     );
     expect(importSubtext(partial)).toMatch(/^47 could not be imported\. /);

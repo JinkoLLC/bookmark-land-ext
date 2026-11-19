@@ -74,7 +74,7 @@ export function CollectionNoteEditor({
         HTMLAttributes: { class: "tiptap-link", rel: "noopener noreferrer" },
       }),
       Placeholder.configure({
-        placeholder: "Add notes, checklists, or bookmark links...",
+        placeholder: "Add notes, checklists, or bookmark links…",
       }),
     ],
     content: initialHtml,
@@ -107,10 +107,14 @@ export function CollectionNoteEditor({
 
     setIsSaving(true);
     setError(null);
+    // Read-only while the request runs: a change made now would not be in it.
+    editor.setEditable(false, false);
     try {
       await updateCollection({ id: collectionId, notes });
       onSaved();
     } catch (err) {
+      editor.setEditable(true, false);
+      editor.commands.focus();
       const message = err instanceof Error ? err.message : String(err);
       setError(
         message.includes("PRO_REQUIRED")
@@ -134,7 +138,7 @@ export function CollectionNoteEditor({
         <p className="text-xs text-neutral-500 dark:text-neutral-400">Editing collection note</p>
       </header>
 
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} disabled={!editor || isSaving} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         <div className="tiptap-extension-editor rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
@@ -143,7 +147,7 @@ export function CollectionNoteEditor({
       </div>
 
       {error && (
-        <p className="border-t border-red-200 px-3 py-2 text-xs text-red-600 dark:border-red-900 dark:text-red-400">
+        <p role="alert" className="border-t border-red-200 px-3 py-2 text-xs text-red-600 dark:border-red-900 dark:text-red-400">
           {error}
         </p>
       )}
@@ -177,7 +181,7 @@ export function CollectionNoteEditor({
   );
 }
 
-function Toolbar({ editor }: { editor: Editor | null }) {
+function Toolbar({ editor, disabled }: { editor: Editor | null; disabled: boolean }) {
   const setLink = useCallback(() => {
     if (!editor) return;
     const previousHref = editor.getAttributes("link").href as string | undefined;
@@ -197,7 +201,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
     <div className="flex flex-wrap items-center gap-1 border-b border-neutral-200 px-2 py-1 dark:border-neutral-800">
       <ToolButton
         active={editor?.isActive("bold") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Bold"
         onClick={() => editor?.chain().focus().toggleBold().run()}
       >
@@ -205,7 +209,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       </ToolButton>
       <ToolButton
         active={editor?.isActive("italic") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Italic"
         onClick={() => editor?.chain().focus().toggleItalic().run()}
       >
@@ -213,7 +217,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       </ToolButton>
       <ToolButton
         active={editor?.isActive("heading", { level: 2 }) ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Heading"
         onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
       >
@@ -222,7 +226,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       <span className="mx-1 h-4 w-px bg-neutral-300 dark:bg-neutral-700" />
       <ToolButton
         active={editor?.isActive("bulletList") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Bullet list"
         onClick={() => editor?.chain().focus().toggleBulletList().run()}
       >
@@ -230,7 +234,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       </ToolButton>
       <ToolButton
         active={editor?.isActive("orderedList") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Ordered list"
         onClick={() => editor?.chain().focus().toggleOrderedList().run()}
       >
@@ -238,7 +242,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       </ToolButton>
       <ToolButton
         active={editor?.isActive("taskList") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Checklist"
         onClick={() => editor?.chain().focus().toggleTaskList().run()}
       >
@@ -247,7 +251,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       <span className="mx-1 h-4 w-px bg-neutral-300 dark:bg-neutral-700" />
       <ToolButton
         active={editor?.isActive("link") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Link"
         onClick={setLink}
       >
@@ -278,7 +282,7 @@ function ToolButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-md p-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-50 ${
+      className={`rounded-md p-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 ${
         active
           ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-950"
           : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-900"

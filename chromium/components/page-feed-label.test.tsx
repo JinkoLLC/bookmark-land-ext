@@ -40,10 +40,13 @@ describe("a collection that a live page shows", () => {
       <DestinationPicker
         value={{ kind: "existing", id: "shown" }}
         onChange={() => undefined}
+        importedName="Imported Nov 1, 2026, 3:42 PM"
         options={[{ id: "shown", name: "Reading", depth: 0 }, { id: "private", name: "Notes", depth: 0 }]}
         onPage={new Map([["shown", 1]])}
       />,
     );
+    // The default destination shows the name it was given.
+    expect(html).toContain("Imported Nov 1, 2026, 3:42 PM");
     expect(html).toContain("Reading · on a page");
     expect(html).not.toContain("Notes · on a page");
     expect(html).toContain("Bookmarks imported into this collection appear on 1 live page");

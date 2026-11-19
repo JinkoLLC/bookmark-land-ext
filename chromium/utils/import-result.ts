@@ -85,8 +85,11 @@ export function importSubtext(result: ImportResult, planLimit: number | null = n
   if (outcome === "already-here")
     return "Every bookmark you picked was already in your library, so nothing new was added.";
   // Two facts side by side, not a cause: the result doesn't say why each bookmark was skipped.
-  if (planLimit !== null)
-    return `${bookmarks(result.skipped)} ${result.skipped === 1 ? "wasn't" : "weren't"} imported. Your library is at its ${formatCount(planLimit)}-bookmark limit.`;
+  if (planLimit !== null) {
+    // "other": apart from the restored and already-saved ones the counts line lists.
+    const other = result.restored + result.duplicates > 0 ? "other " : "";
+    return `${formatCount(result.skipped)} ${other}bookmark${result.skipped === 1 ? " wasn't" : "s weren't"} imported. Your library is at its ${formatCount(planLimit)}-bookmark limit.`;
+  }
   // "partial" counts the rest of the selection, "nothing" counts bookmarks.
   const skipped = outcome === "partial" ? formatCount(result.skipped) : bookmarks(result.skipped);
   const could = `${skipped} could not be imported.`;
