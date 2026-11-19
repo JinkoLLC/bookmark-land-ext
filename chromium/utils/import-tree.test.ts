@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { allFoldersMerge, buildImportModel, type NativeNode } from "./import-tree";
+import { allFoldersMerge, anyRootTicked, buildImportModel, type NativeNode } from "./import-tree";
 
 const bm = (id: string, url: string, title = `t-${id}`): NativeNode => ({
   id,
@@ -234,5 +234,20 @@ describe("buildImportModel", () => {
     const roots = [folder("1", "Bar", [bm("100", "https://a.com/", "  ")])];
     const model = buildImportModel(roots, NONE);
     expect(model.bookmarks[0].title).toBeUndefined();
+  });
+});
+
+describe("anyRootTicked", () => {
+  // Ticked, but nothing in it can be imported: not the same as an empty selection.
+  const roots: NativeNode[] = [
+    { id: "1", title: "Bookmarks bar", children: [{ id: "10", title: "Settings", url: "chrome://settings" }] },
+    { id: "2", title: "Other bookmarks", children: [{ id: "20", title: "Empty", children: [] }] },
+  ];
+
+  it("tells ticked folders with nothing importable from an empty selection", () => {
+    expect(buildImportModel(roots, new Set()).importableCount).toBe(0);
+    expect(anyRootTicked(roots, new Set())).toBe(true);
+    expect(anyRootTicked(roots, new Set(["1"]))).toBe(true);
+    expect(anyRootTicked(roots, new Set(["1", "2"]))).toBe(false);
   });
 });

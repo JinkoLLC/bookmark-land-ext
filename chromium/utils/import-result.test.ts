@@ -59,8 +59,8 @@ describe("the result screen's decisions", () => {
   it("words the heading from what arrived and what was skipped", () => {
     expect(importHeading(all)).toBe(`${(1284).toLocaleString()} bookmarks imported`);
     expect(importHeading({ ...all, imported: 1, restored: 0 })).toBe("1 bookmark imported");
-    expect(importHeading(partial)).toBe("Only 6 bookmarks were imported");
-    expect(importHeading({ ...partial, imported: 1, restored: 0 })).toBe("Only 1 bookmark was imported");
+    expect(importHeading(partial)).toBe("Only 6 bookmarks came over");
+    expect(importHeading({ ...partial, imported: 1, restored: 0 })).toBe("Only 1 bookmark came over");
     expect(importHeading(here)).toBe("Already all here");
     expect(importHeading(nothing)).toBe("Nothing was imported");
   });
@@ -74,15 +74,18 @@ describe("the result screen's decisions", () => {
     // "other" keeps the skipped apart from the restored and already-saved ones in the counts line.
     const atLimit = "47 other bookmarks weren't imported. Your library is at its 100-bookmark limit.";
     expect(importSubtext(partial, 100)).toBe(atLimit);
-    expect(importSubtext(nothing, 100)).toBe(atLimit);
-    expect(importSubtext({ ...nothing, skipped: 1 }, 1000)).toBe(
+    // With nothing imported there is nothing for "other" to be apart from.
+    expect(importSubtext(nothing, 100)).toBe(
+      "47 bookmarks could not be imported. Your library is at its 100-bookmark limit.",
+    );
+    expect(importSubtext({ ...partial, skipped: 1 }, 1000)).toBe(
       `1 other bookmark wasn't imported. Your library is at its ${(1000).toLocaleString()}-bookmark limit.`,
     );
     expect(importSubtext({ ...partial, restored: 0, duplicates: 0 }, 100)).toBe(
       "47 bookmarks weren't imported. Your library is at its 100-bookmark limit.",
     );
     expect(importSubtext({ ...nothing, duplicates: 0, skipped: 1 }, 1000)).toBe(
-      `1 bookmark wasn't imported. Your library is at its ${(1000).toLocaleString()}-bookmark limit.`,
+      `1 bookmark could not be imported. Your library is at its ${(1000).toLocaleString()}-bookmark limit.`,
     );
     expect(importSubtext(partial)).toMatch(/^47 could not be imported\. /);
     for (const result of [partial, nothing]) {

@@ -174,35 +174,38 @@ export function AddPageButton() {
             : "Already in your library"}
       </p>
     );
-  } else if (error?.kind === "limit") {
-    button = (
-      <button
-        type="button"
-        onClick={() =>
-          void browser.tabs.create({
-            url: `${import.meta.env.WXT_WEB_APP_URL}/settings`,
-          })
-        }
-        className={`${base} bg-primary text-primary-foreground hover:bg-primary-hover`}
-      >
-        Upgrade to save more
-      </button>
-    );
   } else {
     const saving = status === "saving";
+    const limit = error?.kind === "limit";
+    // One button through ready, saving and a failed save, never natively
+    // disabled, so it keeps keyboard focus; after a limit refusal it becomes
+    // the way to upgrade.
     button = (
       <button
         type="button"
-        onClick={() => void add()}
-        disabled={saving}
+        aria-disabled={saving}
+        onClick={() => {
+          if (saving) return;
+          if (limit) {
+            void browser.tabs.create({
+              url: `${import.meta.env.WXT_WEB_APP_URL}/settings`,
+            });
+          } else void add();
+        }}
         className={`${base} bg-primary text-primary-foreground hover:bg-primary-hover`}
       >
         {saving ? (
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         ) : (
-          <Plus className="h-4 w-4" aria-hidden="true" />
+          !limit && <Plus className="h-4 w-4" aria-hidden="true" />
         )}
-        {saving ? "Saving…" : error ? "Retry saving this page" : "Save to bookmark.land"}
+        {saving
+          ? "Saving…"
+          : limit
+            ? "Upgrade to save more"
+            : error
+              ? "Retry saving this page"
+              : "Save to bookmark.land"}
       </button>
     );
   }
