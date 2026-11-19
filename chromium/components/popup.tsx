@@ -408,7 +408,10 @@ function PrivacyNote({
   return (
     <p className={`text-xs ${MUTED}`}>
       {!full ? (
-        <>While signed in, the page you&apos;re viewing is checked against your library and Site security.</>
+        <>
+          While signed in, the page you&apos;re viewing is checked against your library and Site security.
+          Nothing is added unless you save the page.
+        </>
       ) : (
         <>
           While signed in, the address of the page you&apos;re viewing is checked

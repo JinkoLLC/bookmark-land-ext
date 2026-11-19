@@ -9,6 +9,7 @@ import { limitSentence } from "@/utils/quick-save";
 import {
   PENDING_ERROR_KEY,
   isPendingSilentError,
+  pendingErrorFrom,
   type PendingSilentError,
 } from "@/utils/silent-save";
 
@@ -48,14 +49,19 @@ export function PendingErrorBanner() {
       await createBookmark({ url: pending.url, skipDuplicates: true });
       await clear();
       browser.runtime.sendMessage({ type: REFRESH_BADGE_MESSAGE }).catch(() => {});
-    } catch {
-      setRetryFailed(true);
+    } catch (error) {
+      // A refusal for the limit changes what the banner offers, now and on later opens.
+      const next = pendingErrorFrom(pending.url, error);
+      setPending(next);
+      setRetryFailed(next.kind !== "limit");
+      void browser.storage.session.set({ [PENDING_ERROR_KEY]: next }).catch(() => {});
     }
   };
 
   return (
     <div className="flex flex-col gap-1 rounded-md border border-red-300 p-2 dark:border-red-900">
-      <StatusLine tone="error" className="font-medium">
+      {/* A status: its sentence changes when a retry is refused for the limit. */}
+      <StatusLine tone="error" role="status" className="font-medium">
         {pending.kind === "limit"
           ? `A right-click save failed. ${limitSentence(pending.limit)}`
           : "A save from the right-click menu failed."}

@@ -250,7 +250,8 @@ function CollectionPicker({
             const to = event.relatedTarget;
             if (!pressing.current && to !== trigger.current && !event.currentTarget.contains(to)) setOpen(false);
           }}
-          className="flex max-h-[200px] flex-col rounded-md border border-neutral-300 dark:border-neutral-700"
+          // 184 px: with the three-line privacy summary under it, the open list still fits the popup without scrolling it.
+          className="flex max-h-[184px] flex-col rounded-md border border-neutral-300 dark:border-neutral-700"
         >
           <input
             ref={field}

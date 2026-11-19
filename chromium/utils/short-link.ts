@@ -152,7 +152,7 @@ export function unfinishedSentence(at: number, now: number, locale?: string): st
 /** One creation request, kept in the popup's root so leaving the view doesn't lose it. */
 export type ShortLinkCreation =
   | { status: "creating"; slow: boolean }
-  /** `copied`: whether the click's clipboard write worked; null until the clipboard answers. */
+  /** `copied`: whether the click's clipboard write worked; null while the clipboard hasn't answered (or wasn't asked). */
   | { status: "created"; shortUrl: string; copied: boolean | null }
   /** The server refused the address; its sentence. Nothing was used. */
   | { status: "refused"; sentence: string }
@@ -176,17 +176,15 @@ export type ShortLinkView =
       targetUrl: string;
       state: ShortLinkState;
       outcome: "created" | "existing";
-      /** The creation put the short link on the clipboard. */
-      copied: boolean;
+      /** The creation's own clipboard write: true = it worked, false = it was refused, null = pending or none. */
+      copied: boolean | null;
     }
   /**
-   * A creation was started and the popup closed before its answer. "Create
-   * and copy anyway" passes the checks of an ordinary Create: none is
-   * offered at a reached `limit`, and it waits for Quick save (`wait`).
-   * `failed`: a second attempt failed, which leaves the first one's outcome
-   * as unknown as before.
+   * A creation was started and the popup closed before its answer. "Check
+   * again" asks the server; "Start over" drops the record, which leaves the
+   * ordinary view. `limit`: the limit sentences are shown here too.
    */
-  | { kind: "unfinished"; at: number; checking: boolean; limit: boolean; wait: null | "page"; failed: boolean }
+  | { kind: "unfinished"; at: number; checking: boolean; limit: boolean }
   /** The month's allowance or the kept-at-once cap is reached. */
   | { kind: "limit" }
   | {
@@ -201,7 +199,8 @@ export type ShortLinkView =
     };
 
 /**
- * What the Short link view shows. Precedence: a finished creation; short
+ * What the Short link view shows. Precedence: a finished creation (its
+ * status and destination follow its row once the list has it); short
  * links closed to the account; a creation in flight or refused; an address
  * that is never sent; load failures (the account id among them); loading;
  * the page's existing short link; an unfinished creation; a reached limit;
@@ -223,13 +222,15 @@ export function deriveShortLinkView(input: {
 }): ShortLinkView {
   const { address, usage, list, creation, record } = input;
   if (creation?.status === "created") {
+    // Shown at once; the list's row, when it arrives, says whether it still opens and where.
+    const row = list && !(list instanceof Error) ? list.links.find((link) => link.shortUrl === creation.shortUrl) : undefined;
     return {
       kind: "link",
       shortUrl: creation.shortUrl,
-      targetUrl: address,
-      state: "active",
+      targetUrl: row?.targetUrl ?? address,
+      state: row ? shortLinkState(row) : "active",
       outcome: "created",
-      copied: creation.copied === true,
+      copied: creation.copied,
     };
   }
   if (usage && !(usage instanceof Error) && !usage.available) return { kind: "unavailable" };
@@ -238,23 +239,21 @@ export function deriveShortLinkView(input: {
   if (creation?.status === "refused") return { kind: "refused", sentence: creation.sentence };
   if (refusedLocally(address)) return { kind: "refused", sentence: "This address can't be shortened." };
   if (usage instanceof Error || list instanceof Error || input.accountId === null) return { kind: "failed" };
-  const wait = input.bookmarkId === undefined ? "page" : null;
   // With a record, the view never falls back to a plain Create while the list loads.
-  const failed = creation?.status === "failed";
-  if (record != null && list === undefined) return { kind: "unfinished", at: record, checking: true, limit: false, wait, failed };
+  if (record != null && list === undefined) return { kind: "unfinished", at: record, checking: true, limit: false };
   if (usage === undefined || list === undefined || record === undefined) return { ...create, wait: "allowance" };
 
   const match = findShortLink(list.links, address);
   if (match) {
-    return { kind: "link", shortUrl: match.shortUrl, targetUrl: match.targetUrl, state: shortLinkState(match), outcome: "existing", copied: false };
+    return { kind: "link", shortUrl: match.shortUrl, targetUrl: match.targetUrl, state: shortLinkState(match), outcome: "existing", copied: null };
   }
   const limit = limitReached(usage) !== null;
-  if (record !== null) return { kind: "unfinished", at: record, checking: false, limit, wait, failed };
+  if (record !== null) return { kind: "unfinished", at: record, checking: false, limit };
   if (limit) return { kind: "limit" };
   return {
     ...create,
-    wait,
+    wait: input.bookmarkId === undefined ? "page" : null,
     truncated: list.truncated,
-    failed,
+    failed: creation?.status === "failed",
   };
 }

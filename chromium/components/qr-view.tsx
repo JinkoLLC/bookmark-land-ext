@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
 import { StatusLine } from "@/components/status-line";
 import { ViewHeader } from "@/components/view-header";
@@ -13,6 +13,8 @@ const RING =
 const MUTED = "text-neutral-500 dark:text-neutral-400";
 const OUTLINE = `rounded-md border border-neutral-300 px-3 font-medium hover:bg-neutral-50 aria-disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800 ${RING}`;
 const FILLED = `rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover aria-disabled:opacity-70 ${RING}`;
+/** A button that can't work now: flat and grey, so it never reads as the way forward. */
+const UNAVAILABLE = `cursor-not-allowed rounded-md border border-dashed border-neutral-300 bg-neutral-100 px-3 font-medium text-neutral-500 dark:border-neutral-700 dark:bg-neutral-800 dark:text-neutral-400 ${RING}`;
 /** A code past this version has modules too fine to scan reliably off a screen at the popup's size. */
 const DENSE_ABOVE_VERSION = 25;
 export const TEXT_LINK = `rounded underline underline-offset-2 hover:text-neutral-950 dark:hover:text-white ${RING}`;
@@ -72,10 +74,13 @@ export function QrImage({
   );
 }
 
+/** An address breaks at any character, so every line is filled: at its hyphens alone it wraps raggedly. */
+const BREAK_ANYWHERE = "[overflow-wrap:anywhere] [line-break:anywhere]";
+
 /**
- * A page's address, wrapped at word boundaries where it has them and held to
- * two lines so the actions under it stay in view; one that doesn't fit gets a
- * disclosure showing all of it.
+ * A page's address, in full while it fits in six lines, so a query string is
+ * there to read before anything is made from it. Only a longer one is held to
+ * six lines, with a disclosure showing all of it.
  */
 export function PageAddress({
   text: address,
@@ -92,12 +97,12 @@ export function PageAddress({
   const [open, setOpen] = useState(false);
   useLayoutEffect(() => {
     const element = text.current;
-    // Measured while held to two lines: is anything cut off?
+    // Measured while held to six lines: is anything cut off?
     if (element && !open) setLong(element.scrollHeight > element.clientHeight + 1);
   }, [address, open]);
   return (
     <div className="min-w-0">
-      <p ref={text} id={id} className={`text-xs [overflow-wrap:anywhere] ${open ? "" : "line-clamp-2"} ${className}`}>
+      <p ref={text} id={id} className={`text-xs ${BREAK_ANYWHERE} ${open ? "" : "line-clamp-6"} ${className}`}>
         {address}
       </p>
       {long && (
@@ -170,31 +175,36 @@ export function QrExports({
     void copyWhenReady("image/png", drawn()).then((ok) => setCopy(ok ? "copied" : "failed"));
   };
   const height = stacked ? "py-1.5" : "py-2";
+  const failed = png === "failed";
+  const reason = useId();
 
   return (
     <div className={`flex min-w-0 flex-col gap-2 ${stacked ? "flex-1" : ""}`}>
       <button
         type="button"
-        aria-disabled={png === "failed"}
+        aria-disabled={failed}
+        aria-describedby={failed ? reason : undefined}
         onClick={copyImage}
-        className={stacked ? `${OUTLINE} ${height}` : FILLED}
+        className={failed ? `${UNAVAILABLE} ${height}` : stacked ? `${OUTLINE} ${height}` : FILLED}
       >
         {copy === "copied" ? "Copied" : "Copy image"}
       </button>
       <div className={`flex gap-2 ${stacked ? "flex-col" : ""}`}>
         <button
           type="button"
-          aria-disabled={png === "failed"}
+          aria-disabled={failed}
+          aria-describedby={failed ? reason : undefined}
           // A failure here is the same one the drawing above reports.
-          onClick={() => png !== "failed" && void drawn().then((blob) => download(blob, `${fileName}.png`), () => {})}
-          className={`flex-1 ${OUTLINE} ${height}`}
+          onClick={() => !failed && void drawn().then((blob) => download(blob, `${fileName}.png`), () => {})}
+          className={`flex-1 ${failed ? UNAVAILABLE : OUTLINE} ${height}`}
         >
           Download PNG
         </button>
         <button
           type="button"
           onClick={() => download(new Blob([svg], { type: "image/svg+xml" }), `${fileName}.svg`)}
-          className={`flex-1 ${OUTLINE} ${height}`}
+          // The one export left without a PNG; beside the short link's filled Copy it stays an outline.
+          className={`flex-1 ${failed && !stacked ? FILLED : `${OUTLINE} ${height}`}`}
         >
           Download SVG
         </button>
@@ -204,8 +214,9 @@ export function QrExports({
           {copy === "copied" ? "Copied" : ""}
         </span>
       )}
-      {png === "failed" ? (
-        <StatusLine tone="error" role="alert" className="text-xs">
+      {failed ? (
+        // Also what the two unavailable buttons are described by.
+        <StatusLine id={reason} tone="error" role="alert" className="text-xs">
           Couldn&apos;t make the PNG. Use Download SVG.
         </StatusLine>
       ) : (
@@ -288,7 +299,7 @@ export function QrView({
                 <p className="text-xs">A short link can&apos;t take an address this long either.</p>
               )}
               {/* Only its start: thousands of characters would be all this view shows. */}
-              <p className={`line-clamp-3 text-xs [overflow-wrap:anywhere] ${MUTED}`} title={url}>
+              <p className={`line-clamp-3 text-xs ${BREAK_ANYWHERE} ${MUTED}`} title={url}>
                 {url}
               </p>
               <button

@@ -176,6 +176,7 @@ export function QuickSaveSection({
           type="button"
           autoFocus
           aria-disabled={saving}
+          aria-describedby="saving-note"
           onClick={() => {
             if (saving) return;
             if (failure?.kind === "limit") openUpgrade();
@@ -191,6 +192,12 @@ export function QuickSaveSection({
                 ? "Retry"
                 : "Save to bookmark.land"}
         </button>
+      )}
+      {/* Why the button does nothing while saving; there before, so its text is announced when it arrives. */}
+      {(view.kind === "ready" || saving || failure) && (
+        <p id="saving-note" role="status" className={saving ? `text-xs ${MUTED}` : "sr-only"}>
+          {saving && "Saving this page…"}
+        </p>
       )}
       {bookmarkId && (
         <Organize

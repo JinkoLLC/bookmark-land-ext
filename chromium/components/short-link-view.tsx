@@ -45,6 +45,8 @@ const SLOW_AFTER_MS = 8_000;
 const ANNOUNCED_FOR_MS = 3_000;
 const UNAVAILABLE = "Short links aren't included in your plan.";
 
+type Copied = "link" | "image";
+
 /** The active tab's page: its address as the browser gives it, and parsed as the server stores a destination. */
 export type PageTab = { url: string; address: string; title?: string };
 
@@ -56,6 +58,11 @@ export type ShortLinkModel = {
   /** The view opened: load the account's short links. */
   load: () => void;
   create: () => void;
+  /** Drops the record of an unfinished creation, which leaves the ordinary view. */
+  startOver: () => void;
+  /** What the latest Copy or Copy image here put on the clipboard: kept in the root so it outlives the view. */
+  lastCopied: Copied | null;
+  setLastCopied: (what: Copied) => void;
   /** Asks the server again for the short links and the allowance. */
   reload: () => void;
 };
@@ -123,22 +130,21 @@ export function useShortLink(
   };
 
   const [creation, setCreation] = useState<ShortLinkCreation | null>(null);
+  const [lastCopied, setLastCopied] = useState<Copied | null>(null);
   const createShortLink = useMutation(api.shortLinks.create);
   const create = () => {
     if (!key || !address || creation?.status === "creating") return;
     setCreation({ status: "creating", slow: false });
-    // A second attempt leaves the first one's record as it is: only that one's
-    // answer (a match in the list) or a success here settles it.
-    const second = record != null;
+    setLastCopied(null);
     // Closing the popup ends its connection, so it may never learn the answer.
-    if (!second) void browser.storage.session.set({ [key]: { at: Date.now() } }).catch(() => {});
+    void browser.storage.session.set({ [key]: { at: Date.now() } }).catch(() => {});
     const pending = createShortLink({
       targetUrl: address,
       ...(bookmarkId && { bookmarkId: bookmarkId as Id<"bookmarks"> }),
     });
     const copied = COPY_ON_CREATE
       ? copyWhenReady("text/plain", pending.then((result) => new Blob([result.shortUrl], { type: "text/plain" })))
-      : Promise.resolve(false);
+      : null;
     const slow = setTimeout(
       () => setCreation((now) => (now?.status === "creating" ? { status: "creating", slow: true } : now)),
       SLOW_AFTER_MS,
@@ -149,7 +155,7 @@ export function useShortLink(
           // The short link exists whatever the clipboard does, and a deferred write may never settle.
           setCreation({ status: "created", shortUrl: result.shortUrl, copied: null });
           forget(key);
-          void copied.then((ok) =>
+          void copied?.then((ok) =>
             setCreation((now) => (now?.status === "created" && now.shortUrl === result.shortUrl ? { ...now, copied: ok } : now)),
           );
         },
@@ -157,7 +163,7 @@ export function useShortLink(
           console.error("[extension] Short link creation failed", error);
           const sentence = refusalFrom(error);
           setCreation(sentence ? { status: "refused", sentence } : { status: "failed" });
-          if (!second) forget(key);
+          forget(key);
         },
       )
       .finally(() => clearTimeout(slow));
@@ -177,6 +183,9 @@ export function useShortLink(
     view: address ? deriveShortLinkView({ address, usage, list, accountId, bookmarkId, creation, record }) : null,
     load: () => setWanted(true),
     create,
+    startOver: () => key && forget(key),
+    lastCopied,
+    setLastCopied,
     reload: () => {
       setDropped(true);
       if (accountId === null) {
@@ -216,14 +225,23 @@ const linkStatus = (view: LinkView) =>
 const ON_CLIPBOARD = { link: "The short link is on your clipboard.", image: "The QR image is on your clipboard." };
 
 /** The short link itself, its destination, and (while it is active) its tracked QR code. */
-function LinkBlock({ view, copyButton }: { view: LinkView; copyButton: React.RefObject<HTMLButtonElement | null> }) {
+function LinkBlock({
+  view,
+  copyButton,
+  last,
+  setLast,
+}: {
+  view: LinkView;
+  copyButton: React.RefObject<HTMLButtonElement | null>;
+  last: Copied | null;
+  setLast: (what: Copied) => void;
+}) {
   // Two copies share the clipboard: only the latest one reads "Copied".
   const [link, setLink] = useCopyState();
   const [image, setImage] = useCopyState();
   // What the latest copy here put on the clipboard; before one, what the creation did.
-  const [last, setLast] = useState<keyof typeof ON_CLIPBOARD | null>(null);
   const onClipboard = last ?? (view.copied ? "link" : null);
-  const latest = (what: keyof typeof ON_CLIPBOARD, set: typeof setLink, other: typeof setLink) => (state: CopyState) => {
+  const latest = (what: Copied, set: typeof setLink, other: typeof setLink) => (state: CopyState) => {
     set(state);
     if (state !== "copied") return;
     setLast(what);
@@ -248,7 +266,7 @@ function LinkBlock({ view, copyButton }: { view: LinkView; copyButton: React.Ref
         view.state === "blocked"
           ? `Opened ${view.targetUrl}`
           : view.state === "paused"
-            ? `Points to ${view.targetUrl}. It won't open while paused.`
+            ? `Points to ${view.targetUrl}`
             : `Opens ${view.targetUrl}`
       }
     />
@@ -256,12 +274,15 @@ function LinkBlock({ view, copyButton }: { view: LinkView; copyButton: React.Ref
   return (
     <>
       {/* Announced by the view's own status region. */}
-      <StatusLine tone={view.state === "active" ? "ok" : "error"} className="font-medium">
+      {/* Pausing is usually the user's own choice: only a block is an error. */}
+      <StatusLine tone={view.state === "active" ? "ok" : view.state === "paused" ? "paused" : "error"} className="font-medium">
         {linkStatus(view)}
       </StatusLine>
       {view.state === "active" && onClipboard && <p className={`text-xs ${MUTED}`}>{ON_CLIPBOARD[onClipboard]}</p>}
       {/* What a link that doesn't open pointed to comes before the link. */}
       {view.state !== "active" && destination}
+      {/* Its own line: an address breaks anywhere, a sentence shouldn't. */}
+      {view.state === "paused" && <p className={`text-xs ${MUTED}`}>It won&apos;t open while paused.</p>}
       <div className="flex items-center gap-2">
         <input
           readOnly
@@ -276,10 +297,19 @@ function LinkBlock({ view, copyButton }: { view: LinkView; copyButton: React.Ref
       <span role="status" className="sr-only">
         {link === "copied" ? "Short link copied" : image === "copied" ? "Image copied" : ""}
       </span>
-      {link === "failed" && (
+      {link === "failed" ? (
         <StatusLine tone="error" role="alert" className="text-xs">
           Couldn&apos;t copy. Select the short link and copy it.
         </StatusLine>
+      ) : (
+        // The creation's own copy was refused, and nothing has been copied here since.
+        view.state === "active" &&
+        view.copied === false &&
+        !last && (
+          <StatusLine tone="error" role="alert" className="text-xs">
+            Couldn&apos;t copy it. Use the Copy button.
+          </StatusLine>
+        )
       )}
       {view.state === "active" && destination}
       {view.state === "active" && svg && (
@@ -311,7 +341,7 @@ function LinkBlock({ view, copyButton }: { view: LinkView; copyButton: React.Ref
  * with the address here; only Create sends the address.
  */
 export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: ShortLinkModel; onBack: () => void }) {
-  const { usage, create, reload } = model;
+  const { usage, create, reload, startOver } = model;
   // The root derives a view whenever there is a page, which this view needs to open.
   const view = model.view!;
   const scroll = useScrollMore();
@@ -320,12 +350,14 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
 
   // After a creation, focus goes to Copy. Any other change that removed the
   // focused control sends focus to the view's start instead of to <body>.
-  const outcome = view.kind === "link" ? view.outcome : view.kind;
+  // A short link's state counts as a change: one that gets paused loses its Copy.
+  const outcome = view.kind === "link" ? `${view.outcome} ${view.state}` : view.kind;
   const shown = useRef(outcome);
   useEffect(() => {
     if (shown.current === outcome) return;
+    const before = shown.current;
     shown.current = outcome;
-    if (outcome === "created") copyButton.current?.focus();
+    if (outcome.startsWith("created") && !before.startsWith("created")) copyButton.current?.focus();
     else if (document.activeElement === document.body) body?.focus();
   }, [outcome, body]);
 
@@ -349,7 +381,7 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
     view.kind === "unavailable"
       ? UNAVAILABLE
       : view.kind === "link"
-        ? `${linkStatus(view)}${view.copied ? `. ${ON_CLIPBOARD.link}` : ""}`
+        ? `${linkStatus(view)}${view.copied && view.state === "active" ? `. ${ON_CLIPBOARD.link}` : ""}`
         : view.kind === "unfinished"
           ? unfinishedSentence(view.at, Date.now())
           : view.kind === "limit"
@@ -393,32 +425,36 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
   } else if (view.kind === "link") {
     content = (
       <>
-        <LinkBlock view={view} copyButton={copyButton} />
+        <LinkBlock view={view} copyButton={copyButton} last={model.lastCopied} setLast={model.setLastCopied} />
         {allowance}
       </>
     );
   } else if (view.kind === "unfinished") {
-    // "Create and copy anyway" passes the same checks as an ordinary Create.
-    const waiting = view.checking || view.wait !== null;
     content = (
       <>
         {page}
         <p>{unfinishedSentence(view.at, Date.now())}</p>
-        {view.failed && (
-          // Not "nothing was used": the first attempt may have made one.
-          <StatusLine tone="error" role="alert" className="font-medium">
-            The second attempt failed.
-          </StatusLine>
-        )}
         <button
           type="button"
           aria-disabled={view.checking}
+          aria-describedby="checking-note"
           onClick={() => !view.checking && reload()}
           className={FILLED}
         >
           {view.checking ? "Checking…" : "Check again"}
         </button>
-        {view.limit ? (
+        {/* Why the button does nothing for now; always there, so its text is announced when it arrives. */}
+        <p id="checking-note" role="status" className={view.checking ? `text-xs ${MUTED}` : "sr-only"}>
+          {view.checking && "Checking your short links…"}
+        </p>
+        {/* Only leaves this view: every rule of an ordinary Create applies after it. */}
+        <button type="button" aria-describedby="start-over-note" onClick={startOver} className={OUTLINE}>
+          Start over
+        </button>
+        <p id="start-over-note" className={`text-xs ${MUTED}`}>
+          If the first one was created, creating again uses a second short link.
+        </p>
+        {view.limit && (
           <>
             {limit?.sentences.map((sentence) => <p key={sentence}>{sentence}</p>)}
             {limit?.manage && (
@@ -427,22 +463,6 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
               </p>
             )}
             {allowance}
-          </>
-        ) : (
-          <>
-            <button
-              type="button"
-              aria-disabled={waiting}
-              aria-describedby="create-anyway-note"
-              onClick={() => !waiting && create()}
-              className={OUTLINE}
-            >
-              {COPY_ON_CREATE ? "Create and copy anyway" : "Create short link anyway"}
-            </button>
-            {/* Read with the button it explains. */}
-            <p id="create-anyway-note" className={`text-xs ${MUTED}`}>
-              {!view.checking && view.wait === "page" ? "Checking this page…" : "This may use a second short link."}
-            </p>
           </>
         )}
       </>
@@ -476,33 +496,38 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
             Couldn&apos;t create the short link. Nothing was used. Try again.
           </StatusLine>
         )}
-        <button
-          type="button"
-          aria-disabled={view.wait !== null}
-          onClick={() => view.wait === null && create()}
-          className={FILLED}
-        >
-          {creating ? "Creating…" : COPY_ON_CREATE ? "Create and copy short link" : "Create short link"}
-        </button>
-        <div role="status" className={`flex flex-col gap-2 text-xs ${MUTED}`}>
-          {view.wait === "allowance" ? (
-            <p>Checking your allowance…</p>
-          ) : view.wait === "page" ? (
-            <p>Checking this page…</p>
-          ) : (
-            allowance
-          )}
-          {view.wait === "creating-slow" && <p>Still creating… check your connection.</p>}
-        </div>
-        <p className={`text-xs ${MUTED}`}>
-          Creating one sends this address to bookmark.land and uses 1 of this month&apos;s short links.
-          Deleting it later doesn&apos;t give it back.{!view.saved && " It doesn't save the page."}
-        </p>
         {view.truncated && (
           <p className="text-xs">
             Only your newest 1,000 short links were checked. An older one for this page may exist: <ManageLink />
           </p>
         )}
+        <button
+          type="button"
+          aria-disabled={view.wait !== null}
+          // While the button does nothing, the line under it says why.
+          aria-describedby={view.wait !== null ? "create-status" : undefined}
+          onClick={() => view.wait === null && create()}
+          className={FILLED}
+        >
+          {creating ? "Creating…" : COPY_ON_CREATE ? "Create and copy short link" : "Create short link"}
+        </button>
+        <div id="create-status" role="status" className={`flex flex-col gap-2 text-xs ${MUTED}`}>
+          {view.wait === "allowance" ? (
+            <p>Checking your allowance…</p>
+          ) : view.wait === "page" ? (
+            <p>Checking this page…</p>
+          ) : view.wait === "creating" ? (
+            <p>Creating the short link…</p>
+          ) : view.wait === "creating-slow" ? (
+            <p>Still creating… check your connection.</p>
+          ) : (
+            allowance
+          )}
+        </div>
+        <p className={`text-xs ${MUTED}`}>
+          Creating one sends this address to bookmark.land and uses 1 of this month&apos;s short links.
+          Deleting it later doesn&apos;t give it back.{!view.saved && " It doesn't save the page."}
+        </p>
       </>
     );
   }
