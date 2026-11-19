@@ -30,6 +30,22 @@ export function openUpgrade() {
   });
 }
 
+/** The page the popup is about: its title and its site, signed in or out. */
+export function PageLines({ tab }: { tab: TabInfo }) {
+  return (
+    <div className="min-w-0">
+      {tab.title?.trim() && (
+        <p className="line-clamp-2 font-medium" title={tab.title}>
+          {tab.title.trim()}
+        </p>
+      )}
+      <p className={`mt-0.5 truncate text-xs ${MUTED}`} title={tab.url}>
+        {extractDomain(tab.url)}
+      </p>
+    </div>
+  );
+}
+
 /**
  * Two-step Quick save: opening the popup only CHECKS the page (no writes);
  * the user adds it with an explicit click. Already-saved pages go straight
@@ -156,18 +172,7 @@ export function QuickSaveSection({
             : "Couldn't save this page. Check your connection and retry."}
         </StatusLine>
       )}
-      {tab && (
-        <div className="min-w-0">
-          {tab.title?.trim() && (
-            <p className="line-clamp-2 font-medium" title={tab.title}>
-              {tab.title.trim()}
-            </p>
-          )}
-          <p className={`mt-0.5 truncate text-xs ${MUTED}`} title={tab.url}>
-            {site}
-          </p>
-        </div>
-      )}
+      {tab && <PageLines tab={tab} />}
       {/* One button through ready, saving and a failed save, so it keeps
           focus; after a limit refusal it becomes the way to upgrade. */}
       {(view.kind === "ready" || saving || failure) && (
@@ -193,9 +198,10 @@ export function QuickSaveSection({
                 : "Save to bookmark.land"}
         </button>
       )}
-      {/* Why the button does nothing while saving; there before, so its text is announced when it arrives. */}
+      {/* Why the button does nothing while saving; there before, so its text is announced when it arrives.
+          The button's label shows the progress, so this is for a screen reader and nothing moves. */}
       {(view.kind === "ready" || saving || failure) && (
-        <p id="saving-note" role="status" className={saving ? `text-xs ${MUTED}` : "sr-only"}>
+        <p id="saving-note" role="status" className="sr-only">
           {saving && "Saving this page…"}
         </p>
       )}

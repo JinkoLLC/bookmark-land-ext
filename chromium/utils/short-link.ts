@@ -80,18 +80,29 @@ export function findShortLink(links: ShortLinkRow[], address: string): ShortLink
   return matches.find((link) => shortLinkState(link) === "active") ?? matches[0] ?? null;
 }
 
-/** `bkmk.to/k7m2qx`: the short link as shown, without its scheme. */
+/**
+ * An address cut where it may wrap: after `/`, `-`, `?`, `&`, `=`, `.` and
+ * `_` (never between two slashes). The view puts a `<wbr>` between the parts.
+ */
+export const addressParts = (address: string) => address.split(/(?<=[/\-?&=._])(?!\/)/);
+
+/** `bkmk.to/k7m2qx`: a short link named without its scheme. */
 export const shortLinkText = (shortUrl: string) => shortUrl.replace(/^https?:\/\//, "");
 /** What a tracked QR code encodes: the redirect counts `?qr` as a scan. */
 export const trackedQrAddress = (shortUrl: string) => `${shortUrl}?qr`;
 
 const count = (n: number) => n.toLocaleString();
 
-/** "38 of 50 left this month · Pro plan"; on plans that cap the kept short links, "12 of 25 kept at once · 13 new left this month" (both limits can be the same number, so each is named). */
+/**
+ * "38 of 50 left this month · Pro plan". On a plan that caps the short links
+ * held at once, that cap is named only when it is reached or one away:
+ * "10 left this month · 24 of 25 in use".
+ */
 export function allowanceLine(usage: ShortLinkUsage, withPlan = false): string {
   const left = count(Math.max(0, usage.monthly - usage.created));
-  if (usage.liveCap !== undefined) {
-    return `${count(Math.min(usage.held ?? 0, usage.liveCap))} of ${count(usage.liveCap)} kept at once · ${left} new left this month`;
+  if (usage.liveCap !== undefined && (usage.held ?? 0) >= usage.liveCap - 1) {
+    // The server counts held up to one past the cap.
+    return `${left} left this month · ${count(Math.min(usage.held ?? 0, usage.liveCap))} of ${count(usage.liveCap)} in use`;
   }
   return `${left} of ${count(usage.monthly)} left this month${withPlan ? ` · ${TIER_LABEL[usage.tier]} plan` : ""}`;
 }
@@ -108,10 +119,10 @@ export function limitReached(
   const plan = TIER_LABEL[usage.tier];
   return {
     sentences: [
-      ...(monthly ? [`You've made all ${count(usage.monthly)} short links for this month. You can make more on ${resets}.`] : []),
+      ...(monthly ? [`You've used this month's ${count(usage.monthly)} short links. You can make more on ${resets}.`] : []),
       // Deleting is permanent and gives nothing back this month, so it is only asked for when it would help now.
-      ...(kept && monthly ? [`After that you'd also need to delete one: the ${plan} plan keeps up to ${count(usage.liveCap!)} at once.`] : []),
-      ...(kept && !monthly ? [`The ${plan} plan keeps up to ${count(usage.liveCap!)} short links at once. Delete one to make room.`] : []),
+      ...(kept && monthly ? [`After that you'd also need to delete one: the ${plan} plan holds up to ${count(usage.liveCap!)} at a time.`] : []),
+      ...(kept && !monthly ? [`You have ${count(usage.liveCap!)} short links, and the ${plan} plan holds up to ${count(usage.liveCap!)} at a time. Delete one to make room.`] : []),
     ],
     upgrade: monthly && (usage.tier === "free" || usage.tier === "edu"),
     manage: kept,
@@ -141,7 +152,8 @@ export function readCreateRecord(value: unknown): number | null {
 /** The record's sentence, with the date when the attempt wasn't today. */
 export function unfinishedSentence(at: number, now: number, locale?: string): string {
   const started = new Date(at);
-  const time = started.toLocaleTimeString(locale, { timeStyle: "short" });
+  // "10:02 AM" stays on one line.
+  const time = started.toLocaleTimeString(locale, { timeStyle: "short" }).replace(/\s/g, "\u00a0");
   const sameDay = started.toDateString() === new Date(now).toDateString();
   const day = sameDay ? "" : ` on ${started.toLocaleDateString(locale, { month: "short", day: "numeric" })}`;
   return `You started a short link for this page at ${time}${day} and the popup closed before it finished. We couldn't confirm whether it was created.`;
@@ -185,8 +197,8 @@ export type ShortLinkView =
    * ordinary view. `limit`: the limit sentences are shown here too.
    */
   | { kind: "unfinished"; at: number; checking: boolean; limit: boolean }
-  /** The month's allowance or the kept-at-once cap is reached. */
-  | { kind: "limit" }
+  /** The month's allowance or the cap on short links held at once is reached. `deleted`: as in "create". */
+  | { kind: "limit"; deleted: boolean }
   | {
       kind: "create";
       /** Why Create is disabled now, if it is. */
@@ -196,15 +208,22 @@ export type ShortLinkView =
       /** The page is a Bookmark, so the short link is attached to it. */
       saved: boolean;
       failed: boolean;
+      /** The short link this view showed was deleted elsewhere. */
+      deleted: boolean;
     };
 
 /**
  * What the Short link view shows. Precedence: a finished creation (its
  * status and destination follow its row once the list has it); short
  * links closed to the account; a creation in flight or refused; an address
- * that is never sent; load failures (the account id among them); loading;
+ * that is never sent; the short link last confirmed, while the list can't
+ * say otherwise; load failures (the account id among them); loading;
  * the page's existing short link; an unfinished creation; a reached limit;
  * then Create.
+ *
+ * A short link whose row was seen in the list and is missing from a later
+ * complete list was deleted: the ordinary view follows, marked `deleted`.
+ * A created one whose row hasn't been seen yet is only waiting for it.
  */
 export function deriveShortLinkView(input: {
   /** The page's address, parsed (see parseAddress). */
@@ -219,11 +238,17 @@ export function deriveShortLinkView(input: {
   creation: ShortLinkCreation | null;
   /** When an unanswered creation for this account and address started; undefined = not read yet (it can't be before the account id is known) */
   record: number | null | undefined;
+  /** The row of the short link shown, as the list last had it; null = not seen in the list (yet) */
+  seen: ShortLinkRow | null;
 }): ShortLinkView {
-  const { address, usage, list, creation, record } = input;
-  if (creation?.status === "created") {
+  const { address, usage, list, creation, record, seen } = input;
+  const live = list && !(list instanceof Error) ? list : null;
+  const rowOf = (shortUrl: string) => live?.links.find((link) => link.shortUrl === shortUrl);
+  // Only a complete list can say a short link is gone: a failed or cut-off one leaves the last confirmed state.
+  const deleted = seen !== null && live !== null && !live.truncated && !rowOf(seen.shortUrl);
+  if (creation?.status === "created" && !(deleted && seen.shortUrl === creation.shortUrl)) {
     // Shown at once; the list's row, when it arrives, says whether it still opens and where.
-    const row = list && !(list instanceof Error) ? list.links.find((link) => link.shortUrl === creation.shortUrl) : undefined;
+    const row = rowOf(creation.shortUrl) ?? (seen?.shortUrl === creation.shortUrl ? seen : undefined);
     return {
       kind: "link",
       shortUrl: creation.shortUrl,
@@ -234,22 +259,30 @@ export function deriveShortLinkView(input: {
     };
   }
   if (usage && !(usage instanceof Error) && !usage.available) return { kind: "unavailable" };
-  const create = { kind: "create", truncated: false, saved: input.bookmarkId != null, failed: false } as const;
+  const create = { kind: "create", truncated: false, saved: input.bookmarkId != null, failed: false, deleted } as const;
   if (creation?.status === "creating") return { ...create, wait: creation.slow ? "creating-slow" : "creating" };
   if (creation?.status === "refused") return { kind: "refused", sentence: creation.sentence };
   if (refusedLocally(address)) return { kind: "refused", sentence: "This address can't be shortened." };
+  const match = live && findShortLink(live.links, address);
+  const link = (row: ShortLinkRow): ShortLinkView => ({
+    kind: "link",
+    shortUrl: row.shortUrl,
+    targetUrl: row.targetUrl,
+    state: shortLinkState(row),
+    outcome: "existing",
+    copied: null,
+  });
+  // Its row is missing from a list that can't be read, or only in part: the last confirmed state stands.
+  if (seen && !deleted && !match && !rowOf(seen.shortUrl)) return link(seen);
   if (usage instanceof Error || list instanceof Error || input.accountId === null) return { kind: "failed" };
   // With a record, the view never falls back to a plain Create while the list loads.
   if (record != null && list === undefined) return { kind: "unfinished", at: record, checking: true, limit: false };
   if (usage === undefined || list === undefined || record === undefined) return { ...create, wait: "allowance" };
 
-  const match = findShortLink(list.links, address);
-  if (match) {
-    return { kind: "link", shortUrl: match.shortUrl, targetUrl: match.targetUrl, state: shortLinkState(match), outcome: "existing", copied: null };
-  }
+  if (match) return link(match);
   const limit = limitReached(usage) !== null;
   if (record !== null) return { kind: "unfinished", at: record, checking: false, limit };
-  if (limit) return { kind: "limit" };
+  if (limit) return { kind: "limit", deleted };
   return {
     ...create,
     wait: input.bookmarkId === undefined ? "page" : null,

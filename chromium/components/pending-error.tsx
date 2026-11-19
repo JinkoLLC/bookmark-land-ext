@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@convex/api";
 import { browser } from "wxt/browser";
@@ -12,19 +12,26 @@ import {
   pendingErrorFrom,
   type PendingSilentError,
 } from "@/utils/silent-save";
+import { extractDomain } from "../shared/url";
 
 const OUTLINE_BUTTON =
-  "rounded-md border border-neutral-300 px-3 py-1 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800";
+  "rounded-md border border-neutral-300 px-3 py-1 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-800";
 
 /**
  * Surfaces a failed silent save (context menu) the next time the popup
  * opens: the address that failed, a way forward (Retry, or Upgrade after a
  * limit refusal) and Dismiss. The record lives in storage.session until the
- * retry succeeds or the user dismisses it.
+ * retry succeeds or the user dismisses it. A retry that saves the page says
+ * so in a line that stays after the banner has gone.
  */
 export function PendingErrorBanner() {
   const [pending, setPending] = useState<PendingSilentError | null>(null);
   const [retryFailed, setRetryFailed] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  const [saved, setSaved] = useState("");
+  const banner = useRef<HTMLDivElement>(null);
+  // A retry answered after the banner was dismissed doesn't bring it back.
+  const dismissed = useRef(false);
   const createBookmark = useMutation(api.bookmarkMutations.create);
 
   useEffect(() => {
@@ -36,58 +43,96 @@ export function PendingErrorBanner() {
       });
   }, []);
 
-  if (!pending) return null;
-
   const clear = async () => {
+    dismissed.current = true;
     await browser.storage.session.remove(PENDING_ERROR_KEY);
+    // The banner goes with the button that has focus: the popup's first control after it takes it.
+    const box = banner.current;
+    if (box?.contains(document.activeElement)) {
+      [...(box.closest("main")?.querySelectorAll<HTMLElement>("button, a[href], input") ?? [])]
+        .find((control) => !box.contains(control))
+        ?.focus();
+    }
     setPending(null);
   };
 
-  const retry = async () => {
+  const retry = async (url: string) => {
+    setRetrying(true);
     setRetryFailed(false);
     try {
-      await createBookmark({ url: pending.url, skipDuplicates: true });
+      await createBookmark({ url, skipDuplicates: true });
+      setSaved(`Saved ${extractDomain(url)}.`);
       await clear();
       browser.runtime.sendMessage({ type: REFRESH_BADGE_MESSAGE }).catch(() => {});
     } catch (error) {
+      if (dismissed.current) return;
       // A refusal for the limit changes what the banner offers, now and on later opens.
-      const next = pendingErrorFrom(pending.url, error);
+      const next = pendingErrorFrom(url, error);
       setPending(next);
       setRetryFailed(next.kind !== "limit");
       void browser.storage.session.set({ [PENDING_ERROR_KEY]: next }).catch(() => {});
+    } finally {
+      setRetrying(false);
     }
   };
 
-  return (
-    <div className="flex flex-col gap-1 rounded-md border border-red-300 p-2 dark:border-red-900">
-      {/* A status: its sentence changes when a retry is refused for the limit. */}
-      <StatusLine tone="error" role="status" className="font-medium">
-        {pending.kind === "limit"
-          ? `A right-click save failed. ${limitSentence(pending.limit)}`
-          : "A save from the right-click menu failed."}
-      </StatusLine>
-      <p className="truncate text-xs text-neutral-500 dark:text-neutral-400" title={pending.url}>
-        {pending.url}
-      </p>
-      {retryFailed && (
-        <StatusLine tone="error" role="alert" className="text-xs">
-          Retry failed. Still can&apos;t save.
-        </StatusLine>
-      )}
-      <div className="mt-1 flex gap-2">
-        {pending.kind === "limit" ? (
-          <button type="button" onClick={openUpgrade} className={OUTLINE_BUTTON}>
-            Upgrade to save more
-          </button>
-        ) : (
-          <button type="button" onClick={() => void retry()} className={OUTLINE_BUTTON}>
-            Retry
-          </button>
-        )}
-        <button type="button" onClick={() => void clear()} className={OUTLINE_BUTTON}>
-          Dismiss
-        </button>
-      </div>
+  // There before a retry answers, so its text is announced when it arrives; it takes no room while empty.
+  const outcome = (
+    <div role="status" className={saved ? "" : "sr-only"}>
+      {saved && <StatusLine tone="ok">{saved}</StatusLine>}
     </div>
+  );
+  if (!pending) return outcome;
+
+  return (
+    <>
+      {outcome}
+      <div ref={banner} className="flex flex-col gap-1 rounded-md border border-red-300 p-2 dark:border-red-900">
+        {/* A status: its sentence changes when a retry is refused for the limit. */}
+        <StatusLine tone="error" role="status" className="font-medium">
+          {pending.kind === "limit"
+            ? `A right-click save failed. ${limitSentence(pending.limit)}`
+            : "A save from the right-click menu failed."}
+        </StatusLine>
+        <p className="truncate text-xs text-neutral-500 dark:text-neutral-400" title={pending.url}>
+          {pending.url}
+        </p>
+        {retryFailed && (
+          <StatusLine tone="error" role="alert" className="text-xs">
+            Retry failed. Still can&apos;t save.
+          </StatusLine>
+        )}
+        {/* Why neither button does anything for now: Dismiss keeps its label, so this one is on screen. */}
+        <p id="retrying-note" role="status" className={retrying ? "text-xs text-neutral-500 dark:text-neutral-400" : "sr-only"}>
+          {retrying && "Trying the save again…"}
+        </p>
+        <div className="mt-1 flex gap-2">
+          {pending.kind === "limit" ? (
+            <button type="button" onClick={openUpgrade} className={OUTLINE_BUTTON}>
+              Upgrade to save more
+            </button>
+          ) : (
+            <button
+              type="button"
+              aria-disabled={retrying}
+              aria-describedby="retrying-note"
+              onClick={() => !retrying && void retry(pending.url)}
+              className={OUTLINE_BUTTON}
+            >
+              {retrying ? "Retrying…" : "Retry"}
+            </button>
+          )}
+          <button
+            type="button"
+            aria-disabled={retrying}
+            aria-describedby="retrying-note"
+            onClick={() => !retrying && void clear()}
+            className={OUTLINE_BUTTON}
+          >
+            Dismiss
+          </button>
+        </div>
+      </div>
+    </>
   );
 }

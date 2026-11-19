@@ -16,7 +16,7 @@ import { useStalled } from "@/hooks/use-stalled";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { moveIndex } from "@/utils/list-keys";
 import { parseAddress, refusedLocally } from "@/utils/short-link";
-import { QuickSaveSection } from "@/components/quick-save";
+import { PageLines, QuickSaveSection } from "@/components/quick-save";
 import { PendingErrorBanner } from "@/components/pending-error";
 import { AuthStalled } from "@/components/auth-stalled";
 import { StatusLine } from "@/components/status-line";
@@ -227,6 +227,7 @@ function SignedOutView() {
       {views.top === "qr" && tab && <QrView url={tab.url} onBack={views.back} canShorten={false} />}
       <div className={views.top ? "hidden" : "contents"}>
         <PlainView>
+          {tab && <PageLines tab={tab} />}
           <p>Sign in to bookmark.land to start saving pages.</p>
           <p id="signed-in-list" className={MUTED}>
             Once you&apos;re signed in:
@@ -298,6 +299,7 @@ function SignedInView() {
               onBack={views.back}
               onShortLink={shortLink.open ? openShortLink : undefined}
               canShorten={!refusedLocally(tab.address)}
+              onCopied={shortLink.setLastCopied}
             />
           )}
           {view === "short" && tab && <ShortLinkView tab={tab} model={shortLink} onBack={views.back} />}
@@ -334,7 +336,7 @@ function SignedInView() {
                 </button>
               </div>
             )}
-            <PrivacyNote shortLinks={Boolean(tab) && shortLink.open} compact={Boolean(bookmarkId)} />
+            <PrivacyNote shortLinks={Boolean(tab) && shortLink.open} saved={Boolean(bookmarkId)} />
           </div>
         </main>
         <footer className="flex shrink-0 flex-col border-t border-neutral-200 px-3 pb-2 pt-[7px] text-xs text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
@@ -375,12 +377,12 @@ function SignedInView() {
  */
 function PrivacyNote({
   shortLinks,
-  compact,
+  saved,
 }: {
   /** The Short link button is offered. */
   shortLinks: boolean;
   /** The page is a Bookmark: the organizing controls need the room, so the full text waits behind "More". */
-  compact: boolean;
+  saved: boolean;
 }) {
   const [open, setOpen] = useState(false);
   // The full text is for the first visit: once it has been shown, every state
@@ -393,7 +395,7 @@ function PrivacyNote({
       () => setSeen(false),
     );
   }, []);
-  const summary = compact || seen === true;
+  const summary = saved || seen === true;
   const full = !summary || open;
   useEffect(() => {
     if (!full || seen !== false) return;
@@ -410,7 +412,8 @@ function PrivacyNote({
       {!full ? (
         <>
           While signed in, the page you&apos;re viewing is checked against your library and Site security.
-          Nothing is added unless you save the page.
+          {/* The Short link button beside it can store the address without one. */}
+          {!saved && " A bookmark is added only when you save the page."}
         </>
       ) : (
         <>

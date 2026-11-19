@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { ConvexError } from "convex/values";
 import {
+  addressParts,
   allowanceLine,
   createRecordKey,
   deriveShortLinkView,
@@ -60,6 +61,15 @@ describe("refusedLocally", () => {
   });
 });
 
+describe("addressParts", () => {
+  it("cuts an address after its separators, and never between two slashes", () => {
+    expect(addressParts("https://grid-notes.example/a_b/storage-pilots?ref=x&utm=y")).toEqual([
+      "https://", "grid-", "notes.", "example/", "a_", "b/", "storage-", "pilots?", "ref=", "x&", "utm=", "y",
+    ]);
+    expect(addressParts("Opens https://bkmk.to/k7m2qx").join("")).toBe("Opens https://bkmk.to/k7m2qx");
+  });
+});
+
 describe("findShortLink", () => {
   it("matches the parsed address exactly: a query or fragment is another page", () => {
     const links = [link({ targetUrl: "https://gridnotes.example/pilots?ref=twitter" }), link({ targetUrl: "https://gridnotes.example/pilots" })];
@@ -84,12 +94,13 @@ describe("allowanceLine", () => {
     expect(allowanceLine({ ...PRO, created: 60 })).toBe("0 of 50 left this month");
   });
 
-  it("leads with the kept count on plans that cap it", () => {
-    expect(allowanceLine(EDU, true)).toBe("24 of 25 kept at once · 10 new left this month");
-    // On Free both limits are 25: each number says which one it is.
-    expect(allowanceLine({ ...EDU, tier: "free", held: 25, created: 25 })).toBe("25 of 25 kept at once · 0 new left this month");
+  it("names the cap on short links held at once only when it is reached or one away", () => {
+    expect(allowanceLine(EDU, true)).toBe("10 left this month · 24 of 25 in use");
+    expect(allowanceLine({ ...EDU, tier: "free", held: 25, created: 25 })).toBe("0 left this month · 25 of 25 in use");
     // The server counts held up to one past the cap.
-    expect(allowanceLine({ ...EDU, held: 26 })).toBe("25 of 25 kept at once · 10 new left this month");
+    expect(allowanceLine({ ...EDU, held: 26 })).toBe("10 left this month · 25 of 25 in use");
+    expect(allowanceLine({ ...EDU, held: 23 }, true)).toBe("10 of 25 left this month · Education plan");
+    expect(allowanceLine({ ...EDU, tier: "free", held: 12, created: 25 })).toBe("0 of 25 left this month");
   });
 });
 
@@ -101,24 +112,24 @@ describe("limitReached", () => {
 
   it("says when the month is used up, with Upgrade on Free and Education only", () => {
     expect(limitReached({ ...PRO, created: 50 }, "en-US")).toEqual({
-      sentences: ["You've made all 50 short links for this month. You can make more on Dec 1."],
+      sentences: ["You've used this month's 50 short links. You can make more on Dec 1."],
       upgrade: false,
       manage: false,
     });
     expect(limitReached({ ...EDU, created: 25 }, "en-US")?.upgrade).toBe(true);
   });
 
-  it("says when the kept-at-once cap is reached, and puts the monthly sentence first when both are", () => {
+  it("says when the cap on short links held at once is reached, and puts the monthly sentence first when both are", () => {
     expect(limitReached({ ...EDU, held: 25 }, "en-US")).toEqual({
-      sentences: ["The Education plan keeps up to 25 short links at once. Delete one to make room."],
+      sentences: ["You have 25 short links, and the Education plan holds up to 25 at a time. Delete one to make room."],
       upgrade: false,
       manage: true,
     });
     const both = limitReached({ ...EDU, tier: "free", held: 26, created: 25 }, "en-US")!;
     expect(both.sentences).toEqual([
-      "You've made all 25 short links for this month. You can make more on Dec 1.",
+      "You've used this month's 25 short links. You can make more on Dec 1.",
       // Deleting wouldn't help this month, so it isn't asked for as the next step.
-      "After that you'd also need to delete one: the Free plan keeps up to 25 at once.",
+      "After that you'd also need to delete one: the Free plan holds up to 25 at a time.",
     ]);
     expect(both).toMatchObject({ upgrade: true, manage: true });
   });
@@ -144,6 +155,8 @@ describe("the unfinished-create record", () => {
       "You started a short link for this page at 14:02 and the popup closed before it finished. We couldn't confirm whether it was created.",
     );
     expect(unfinishedSentence(at, at + 86_400_000, "en-GB")).toContain("at 14:02 on 19 Nov and the popup closed");
+    // "2:02 PM" never splits across two lines.
+    expect(unfinishedSentence(at, at, "en-US")).toContain("at 2:02\u00a0PM and the popup closed");
   });
 });
 
@@ -166,8 +179,9 @@ describe("deriveShortLinkView", () => {
     bookmarkId: null,
     creation: null,
     record: null,
+    seen: null,
   };
-  const create = { kind: "create", wait: null, truncated: false, saved: false, failed: false };
+  const create = { kind: "create", wait: null, truncated: false, saved: false, failed: false, deleted: false };
 
   it("offers Create for a page without a short link", () => {
     expect(deriveShortLinkView(base)).toEqual(create);
@@ -246,6 +260,43 @@ describe("deriveShortLinkView", () => {
     });
   });
 
+  it("says a short link was deleted once its row, seen before, is missing from a complete list", () => {
+    const empty = { links: [], truncated: false };
+    // An existing one: the ordinary Create follows, or the limit when no more can be made.
+    expect(deriveShortLinkView({ ...base, seen: link(), list: empty })).toEqual({ ...create, deleted: true });
+    expect(deriveShortLinkView({ ...base, seen: link(), list: empty, usage: { ...PRO, created: 50 } })).toEqual({ kind: "limit", deleted: true });
+    // A created one, the same.
+    const creation = { status: "created", shortUrl: "https://bkmk.to/n3w", copied: true } as const;
+    const row = link({ shortUrl: "https://bkmk.to/n3w" });
+    expect(deriveShortLinkView({ ...base, creation, seen: row, list: empty })).toEqual({ ...create, deleted: true });
+    // Another short link for the page takes its place.
+    expect(deriveShortLinkView({ ...base, creation, seen: row, list: { links: [link()], truncated: false } })).toMatchObject({
+      kind: "link",
+      shortUrl: "https://bkmk.to/k7m2qx",
+      outcome: "existing",
+    });
+    // A new creation after it is an ordinary one.
+    expect(deriveShortLinkView({ ...base, creation: { status: "creating", slow: false }, list: empty })).toMatchObject({ wait: "creating", deleted: false });
+  });
+
+  it("waits for a just-created short link's row instead of calling it deleted", () => {
+    const creation = { status: "created", shortUrl: "https://bkmk.to/n3w", copied: true } as const;
+    expect(deriveShortLinkView({ ...base, creation, list: { links: [], truncated: false } })).toMatchObject({ kind: "link", state: "active", outcome: "created" });
+  });
+
+  it("keeps the last confirmed state while the list can't be read, or only in part", () => {
+    const paused = link({ userPaused: true });
+    for (const list of [new Error("x"), undefined, { links: [], truncated: true }]) {
+      expect(deriveShortLinkView({ ...base, seen: paused, list })).toMatchObject({ kind: "link", state: "paused", outcome: "existing" });
+      expect(deriveShortLinkView({ ...base, seen: link({ status: "blocked" }), list })).toMatchObject({ kind: "link", state: "blocked" });
+      const creation = { status: "created", shortUrl: paused.shortUrl, copied: null } as const;
+      expect(deriveShortLinkView({ ...base, creation, seen: paused, list })).toMatchObject({ kind: "link", state: "paused", outcome: "created" });
+    }
+    // Pointed at another page elsewhere, it is no longer this page's: not deleted, an ordinary Create.
+    const moved = { links: [link({ targetUrl: "https://gridnotes.example/moved" })], truncated: false };
+    expect(deriveShortLinkView({ ...base, seen: link(), list: moved })).toEqual(create);
+  });
+
   it("never offers a plain Create while an unfinished creation is on record", () => {
     const unfinished = { kind: "unfinished", at: 5, checking: false, limit: false };
     expect(deriveShortLinkView({ ...base, record: 5 })).toEqual(unfinished);
@@ -262,7 +313,7 @@ describe("deriveShortLinkView", () => {
   it("is the ordinary view once Start over has dropped the record", () => {
     // Start over sets the record to null: every ordinary rule applies again.
     expect(deriveShortLinkView({ ...base, record: null })).toEqual(create);
-    expect(deriveShortLinkView({ ...base, record: null, usage: { ...PRO, created: 50 } })).toEqual({ kind: "limit" });
+    expect(deriveShortLinkView({ ...base, record: null, usage: { ...PRO, created: 50 } })).toEqual({ kind: "limit", deleted: false });
     expect(deriveShortLinkView({ ...base, record: null, bookmarkId: undefined })).toMatchObject({ kind: "create", wait: "page" });
     expect(deriveShortLinkView({ ...base, record: null, creation: { status: "failed" } })).toEqual({ ...create, failed: true });
     expect(deriveShortLinkView({ ...base, record: null, creation: { status: "refused", sentence: "No." } })).toEqual({ kind: "refused", sentence: "No." });
@@ -271,7 +322,7 @@ describe("deriveShortLinkView", () => {
 
   it("stops at a reached limit, but still shows an existing short link", () => {
     const usage = { ...PRO, created: 50 };
-    expect(deriveShortLinkView({ ...base, usage })).toEqual({ kind: "limit" });
+    expect(deriveShortLinkView({ ...base, usage })).toEqual({ kind: "limit", deleted: false });
     expect(deriveShortLinkView({ ...base, usage, list: { links: [link()], truncated: false } })).toMatchObject({ kind: "link" });
   });
 });
