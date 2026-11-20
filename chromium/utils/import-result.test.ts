@@ -62,6 +62,10 @@ describe("the result screen's decisions", () => {
     expect(importHeading({ ...partial, imported: 1, restored: 0, skipped: 1 })).toBe(
       "1 bookmark imported, 1 could not be imported",
     );
+    // Everything that arrived came back from Trash: the heading says which.
+    expect(importHeading({ ...all, imported: 0, restored: 2 })).toBe("2 bookmarks restored from Trash");
+    expect(importHeading({ ...all, imported: 0, restored: 1 })).toBe("1 bookmark restored from Trash");
+    expect(importHeading({ ...partial, imported: 0 })).toBe("2 bookmarks restored from Trash, 47 could not be imported");
     expect(importHeading(here)).toBe("Already all here");
     expect(importHeading(nothing)).toBe("Nothing was imported");
   });
@@ -81,10 +85,9 @@ describe("the result screen's decisions", () => {
       "Imported: 4 new · 2 restored from Trash",
       "11 were already in your library.",
     ]);
-    expect(importLines({ ...partial, imported: 0, duplicates: 1 })).toEqual([
-      "Imported: 2 restored from Trash",
-      "1 was already in your library.",
-    ]);
+    // Only restored ones: the heading carries them, so no "Imported:" line.
+    expect(importLines({ ...partial, imported: 0, duplicates: 1 })).toEqual(["1 was already in your library."]);
+    expect(importLines({ ...all, imported: 0, restored: 2 })).toEqual([grew]);
     expect(importLines({ ...partial, restored: 0, duplicates: 0 }, 100)).toEqual([limit]);
     expect(importLines(nothing, 100)).toEqual([
       "47 bookmarks could not be imported.",
@@ -99,7 +102,7 @@ describe("the result screen's decisions", () => {
   });
 
   it("says each number once on the screen", () => {
-    for (const result of [partial, nothing, here]) {
+    for (const result of [partial, nothing, here, { ...all, imported: 0, restored: 2 }, { ...partial, imported: 0 }]) {
       const said = [importHeading(result), ...importLines(result, 100)].join(" ");
       for (const n of [result.imported + result.restored, result.imported, result.restored, result.duplicates, result.skipped])
         if (n > 0) expect(said.match(new RegExp(`\\b${n}\\b`, "g")), `${n} in "${said}"`).toHaveLength(1);

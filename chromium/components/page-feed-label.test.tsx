@@ -50,5 +50,26 @@ describe("a collection that a live page shows", () => {
     expect(html).toContain("Reading · on a page");
     expect(html).not.toContain("Notes · on a page");
     expect(html).toContain("Bookmarks imported into this collection appear on 1 live page");
+    // The status is there before it has anything to say.
+    expect(html).toContain('<div role="status" class="min-w-0"></div>');
+  });
+
+  it("says what Import is waiting for, and offers Retry when the check failed", () => {
+    const picker = (livePages: "loading" | "failed", id?: string) =>
+      renderToStaticMarkup(
+        <DestinationPicker
+          value={{ kind: "existing", id }}
+          onChange={() => undefined}
+          importedName="Imported"
+          options={[{ id: "shown", name: "Reading", depth: 0 }]}
+          onPage={new Map()}
+          livePages={livePages}
+        />,
+      );
+    expect(picker("loading", "shown")).toContain("Checking whether this collection appears on a live page…");
+    expect(picker("loading", "shown")).not.toContain("Retry");
+    expect(picker("failed", "shown")).toMatch(/Couldn’t check whether this collection appears on a live page\..*Retry/);
+    // No collection chosen yet: nothing is being checked.
+    expect(picker("loading")).not.toContain("Checking");
   });
 });
