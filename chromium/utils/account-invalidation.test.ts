@@ -26,6 +26,7 @@ vi.mock("wxt/browser", () => {
     browser: {
       runtime: {
         sendMessage: fake.sendMessage,
+        getManifest: () => ({ version: "9.9.9" }),
         onMessage: {
           addListener: (listener: unknown) => fake.messageListeners.push(listener),
           removeListener: (listener: unknown) =>

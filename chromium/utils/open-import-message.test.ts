@@ -9,6 +9,7 @@ type External = (
 const fake = vi.hoisted(() => ({
   external: [] as unknown[],
   create: vi.fn(async (_options: unknown) => undefined),
+  setUninstallURL: vi.fn(async (_url: string) => undefined),
 }));
 
 vi.mock("convex/browser", () => ({
@@ -31,7 +32,7 @@ vi.mock("wxt/browser", () => {
         onMessage: { addListener: () => {}, removeListener: () => {} },
         onInstalled: event(),
         onMessageExternal: { addListener: (listener: unknown) => fake.external.push(listener) },
-        setUninstallURL: async () => {},
+        setUninstallURL: fake.setUninstallURL,
       },
       cookies: { getAll: async () => [], onChanged: event() },
       tabs: { query: async () => [], onActivated: event(), onUpdated: event(), create: fake.create },
@@ -51,6 +52,7 @@ describe("messages from the web app", () => {
     vi.stubEnv("WXT_CLERK_FRONTEND_API", "https://clerk.example.test");
     vi.stubEnv("WXT_CLERK_SYNC_HOST", "https://app.example.test");
     vi.stubEnv("WXT_CONVEX_URL", "https://convex.example.test");
+    vi.stubEnv("WXT_WEB_APP_URL", "https://web.example.test");
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })));
     vi.stubGlobal("defineBackground", (main: () => void) => main());
     await import("../entrypoints/background");
@@ -61,6 +63,12 @@ describe("messages from the web app", () => {
     (fake.external[0] as External)(message, sender, reply);
     return reply;
   };
+
+  it("sends uninstalls to the goodbye page, tagged with the version", () => {
+    expect(fake.setUninstallURL).toHaveBeenLastCalledWith(
+      "https://web.example.test/extension/uninstalled?v=9.9.9",
+    );
+  });
 
   it("answers a ping with the version", () => {
     expect(send({ type: "ping" })).toHaveBeenCalledWith({ version: "9.9.9" });
