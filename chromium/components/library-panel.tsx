@@ -9,6 +9,7 @@ import {
 import { api } from "@convex/api";
 import type { Doc, Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
+import { SIGN_IN_URL } from "@/utils/sign-in-url";
 import { buildTree, type TreeNode } from "../shared/tree";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { useStalled } from "@/hooks/use-stalled";
@@ -74,7 +75,7 @@ export function LibraryPanel() {
 function SignedOutPanel() {
   const openSignIn = () => {
     void browser.tabs.create({
-      url: `${import.meta.env.WXT_WEB_APP_URL}/sign-in`,
+      url: SIGN_IN_URL,
     });
   };
   return (

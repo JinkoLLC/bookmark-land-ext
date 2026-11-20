@@ -3,6 +3,7 @@ import { useAuth, useUser } from "@clerk/chrome-extension";
 import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import { browser } from "wxt/browser";
+import { SIGN_IN_URL } from "@/utils/sign-in-url";
 import { LogOut, MessageSquare, PanelRight, Settings, User } from "lucide-react";
 import { FeedbackForm } from "@/components/feedback-form";
 import {
@@ -79,7 +80,7 @@ function SignedOutView() {
     // Sign-in happens on the web app; the extension picks the session up
     // automatically via Clerk's sync host. No credentials in the popup.
     void browser.tabs.create({
-      url: `${import.meta.env.WXT_WEB_APP_URL}/sign-in`,
+      url: SIGN_IN_URL,
     });
     window.close();
   };

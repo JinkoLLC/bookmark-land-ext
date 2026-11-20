@@ -1,4 +1,5 @@
 import { browser } from "wxt/browser";
+import { SIGN_IN_URL } from "@/utils/sign-in-url";
 
 /**
  * Shown when clerk-js hasn't managed to load for a while — usually a dead
@@ -10,7 +11,7 @@ import { browser } from "wxt/browser";
 export function AuthStalled() {
   const openWebApp = () => {
     void browser.tabs.create({
-      url: `${import.meta.env.WXT_WEB_APP_URL}/sign-in`,
+      url: SIGN_IN_URL,
     });
   };
   return (
