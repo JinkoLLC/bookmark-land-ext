@@ -472,8 +472,8 @@ function PrivacyNote({
       {full ? (
         <>
           While signed in, the address of each page you view is checked against
-          your library for the saved badge, and its site against Site security
-          when this popup opens.
+          your library for the saved badge. Its site is checked against Site
+          security when the page is saved, and when this popup opens.
           {!saved && " A bookmark is added only when you save the page."}
           {shortLinks && " A short link stores this address."}{" "}
         </>
