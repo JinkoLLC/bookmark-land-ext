@@ -112,14 +112,6 @@ export function reachedPlanLimit(
   return library.bookmarkCount >= library.limit ? library.limit : null;
 }
 
-/** The sample is drawn from the selection, so it is only called "what was
- * imported" when every picked bookmark was. */
-export function sampleTitle(result: ImportResult): string {
-  return result.skipped > 0 || result.duplicates > 0
-    ? "Some of what you picked"
-    : "Some of what was imported";
-}
-
 /**
  * The rows of the sample list, from the bookmarks that were sent. Only a
  * complete import shows it: the sample is drawn from the selection, so after

@@ -8,7 +8,6 @@ import {
   importLinks,
   importSample,
   importOutcome,
-  sampleTitle,
   type ImportResult,
 } from "@/utils/import-result";
 
@@ -78,7 +77,6 @@ export function ImportComplete({
     }
   };
   const shown = importSample(result, sample, SAMPLE_SIZE);
-  const title = sampleTitle(result);
   const lines = importLines(result, planLimit);
 
   // The outcome is read first, by sighted and screen-reader users alike.
@@ -112,9 +110,9 @@ export function ImportComplete({
       </div>
 
       {shown.length > 0 && (
-        <section aria-label={title} className="relative min-w-0">
+        <section aria-label="Some of what was imported" className="relative min-w-0">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-600 dark:text-slate-300">
-            {title}
+            Some of what was imported
           </h3>
           <ul className="divide-y divide-emerald-100 overflow-hidden rounded-xl border border-emerald-100 bg-white/80 dark:divide-emerald-900/50 dark:border-emerald-900/60 dark:bg-slate-900/70">
             {shown.map((b) => (
