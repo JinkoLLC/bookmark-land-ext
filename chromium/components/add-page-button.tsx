@@ -2,10 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import { browser } from "wxt/browser";
-import { Check, Loader2, Plus } from "lucide-react";
+import { Check, CircleAlert, Loader2, Plus } from "lucide-react";
 import { REFRESH_BADGE_MESSAGE } from "@/utils/messages";
 import {
   isSaveableUrl,
+  limitSentence,
   prepareSaveArgs,
   stateFromError,
   stateFromResult,
@@ -18,12 +19,15 @@ type TabInfo = { url: string; title?: string };
 const CONFIRMATION_MS = 2500;
 
 /**
- * The Library panel's "Add this page" button. The panel stays open while the
- * user switches tabs, so it follows the active tab of its window and resets
- * after every switch or navigation. Same create path as the popup's Quick
- * save (duplicate-safe), so it never makes a second copy. A save's outcome
- * shows for a moment, then a page already in the library shows "In your
- * library" instead of the button, matching the toolbar's green check.
+ * The Library panel's "Save to bookmark.land" button. The panel stays open
+ * while the user switches tabs, so it follows the active tab of its window and
+ * resets after every switch or navigation. Same create path as the popup's
+ * Quick save (duplicate-safe), so it never makes a second copy. A save's
+ * outcome shows for a moment, then a page already in the library shows
+ * "Already in your library" instead of the button, matching the toolbar's
+ * green check. Save stays available at the plan's limit (a page in Trash is
+ * restored without using room); once the server refuses a save for the limit,
+ * the button offers the upgrade instead.
  */
 export function AddPageButton() {
   // undefined = resolving; null = the active tab can't be saved
@@ -77,7 +81,7 @@ export function AddPageButton() {
     };
   }, []);
 
-  // Live: flips to "In your library" the moment the page is saved anywhere
+  // Live: flips to "Already in your library" the moment the page is saved anywhere
   // (popup, shortcut, right-click), and back if it's deleted.
   const existing = useQuery(
     api.bookmarks.findSavedByUrl,
@@ -85,7 +89,7 @@ export function AddPageButton() {
   );
 
   // A save's outcome shows briefly, then the button settles into the page's
-  // saved state ("In your library").
+  // saved state ("Already in your library").
   useEffect(() => {
     const status = saveState?.status;
     if (status !== "saved" && status !== "restored" && status !== "already-saved") return;
@@ -121,13 +125,24 @@ export function AddPageButton() {
     tab === undefined || (tab !== null && existing === undefined && saveState === null);
   const inLibrary = saveState === null && !!existing;
 
+  // The button is replaced by the status line: focus follows it there rather
+  // than falling to the document.
+  const statusRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    if (saved && document.activeElement === document.body) statusRef.current?.focus();
+  }, [saved]);
+
   const base =
-    "flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 font-medium focus-visible:outline-2 focus-visible:outline-ring";
+    "flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-1.5 font-medium focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
   let button;
   if (checking) {
     button = (
-      <button type="button" disabled className={`${base} bg-primary/60 text-primary-foreground`}>
+      <button
+        type="button"
+        disabled
+        className={`${base} border border-neutral-300 text-neutral-500 dark:border-neutral-700 dark:text-neutral-400`}
+      >
         <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         Checking this page…
       </button>
@@ -138,47 +153,59 @@ export function AddPageButton() {
         type="button"
         disabled
         title="Only web pages (http/https) can be saved"
-        className={`${base} border border-neutral-300 text-neutral-500 dark:border-neutral-700`}
+        className={`${base} border border-neutral-300 text-neutral-500 dark:border-neutral-700 dark:text-neutral-400`}
       >
         This page can&apos;t be saved
       </button>
     );
-  } else if (inLibrary) {
+  } else if (inLibrary || saved) {
     button = (
       <p
+        ref={statusRef}
         role="status"
-        className="flex w-full items-center justify-center gap-1.5 rounded-md border border-green-600/40 px-3 py-1.5 font-medium text-green-700 dark:text-green-400"
+        tabIndex={-1}
+        className={`${base} border border-neutral-300 dark:border-neutral-700`}
       >
-        <Check className="h-4 w-4" aria-hidden="true" />
-        In your library
-      </p>
-    );
-  } else if (saved) {
-    button = (
-      <button type="button" disabled className={`${base} border border-primary/40 text-primary`}>
-        <Check className="h-4 w-4" aria-hidden="true" />
+        <Check className="h-4 w-4 text-primary" aria-hidden="true" />
         {status === "saved"
           ? "Saved to your library"
           : status === "restored"
             ? "Restored from Trash"
             : "Already in your library"}
-      </button>
+      </p>
     );
   } else {
     const saving = status === "saving";
+    const limit = error?.kind === "limit";
+    // One button through ready, saving and a failed save, never natively
+    // disabled, so it keeps keyboard focus; after a limit refusal it becomes
+    // the way to upgrade.
     button = (
       <button
         type="button"
-        onClick={() => void add()}
-        disabled={saving}
-        className={`${base} bg-primary text-primary-foreground hover:opacity-90 disabled:opacity-70`}
+        aria-disabled={saving}
+        onClick={() => {
+          if (saving) return;
+          if (limit) {
+            void browser.tabs.create({
+              url: `${import.meta.env.WXT_WEB_APP_URL}/settings`,
+            });
+          } else void add();
+        }}
+        className={`${base} bg-primary text-primary-foreground hover:bg-primary-hover`}
       >
         {saving ? (
           <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />
         ) : (
-          <Plus className="h-4 w-4" aria-hidden="true" />
+          !limit && <Plus className="h-4 w-4" aria-hidden="true" />
         )}
-        {saving ? "Saving…" : error ? "Retry saving this page" : "Add this page"}
+        {saving
+          ? "Saving…"
+          : limit
+            ? "Upgrade to save more"
+            : error
+              ? "Retry saving this page"
+              : "Save to bookmark.land"}
       </button>
     );
   }
@@ -187,29 +214,19 @@ export function AddPageButton() {
     <div className="flex flex-col gap-1">
       {button}
       {tab && (
-        <p className="truncate px-0.5 text-xs text-neutral-500" title={tab.url}>
+        <p className="truncate px-0.5 text-xs text-neutral-500 dark:text-neutral-400" title={tab.url}>
           {tab.title?.trim() || tab.url}
         </p>
       )}
-      {error?.kind === "limit" && (
-        <p className="px-0.5 text-xs text-red-600 dark:text-red-400">
-          You&apos;ve reached your plan&apos;s limit of {error.limit} bookmarks.{" "}
-          <button
-            type="button"
-            onClick={() =>
-              void browser.tabs.create({
-                url: `${import.meta.env.WXT_WEB_APP_URL}/settings`,
-              })
-            }
-            className="underline underline-offset-2"
-          >
-            Upgrade
-          </button>
-        </p>
-      )}
-      {error?.kind === "retryable" && (
-        <p className="px-0.5 text-xs text-red-600 dark:text-red-400">
-          Couldn&apos;t save this page. Check your connection and retry.
+      {error && (
+        <p role="alert" className="flex items-start gap-1 px-0.5 text-xs">
+          <CircleAlert
+            className="mt-0.5 h-3 w-3 shrink-0 text-red-600 dark:text-red-400"
+            aria-hidden="true"
+          />
+          {error.kind === "limit"
+            ? limitSentence(error.limit)
+            : "Couldn't save this page. Check your connection and retry."}
         </p>
       )}
     </div>

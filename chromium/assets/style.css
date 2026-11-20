@@ -2,26 +2,31 @@
 
 /*
  * Blue accent tokens copied from web/src/app/globals.css (the web app's
- * --primary/--ring values). Only the accent is mirrored here — the rest of
+ * accent). Measured: text on the accent is 4.64:1 light and 6.08:1 dark;
+ * --primary-hover is this extension's own (hover darkens in light, lightens in dark);
+ * the ring is 4.85:1 on white and 5.51:1 on the dark page. Only the accent is mirrored here — the rest of
  * the popup uses stock Tailwind colors. Dark values follow the OS theme
  * since the extension has no theme switcher.
  */
 :root {
-  --primary: oklch(0.614 0.196 253.1);
+  --primary: oklch(0.55 0.196 253.1);
+  --primary-hover: oklch(0.48 0.18 253.1);
   --primary-foreground: oklch(0.985 0 0);
-  --ring: oklch(0.614 0.196 253.1);
+  --ring: oklch(0.55 0.196 253.1);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --primary: oklch(0.65 0.18 253);
-    --primary-foreground: oklch(0.985 0 0);
+    --primary-hover: oklch(0.71 0.16 253);
+    --primary-foreground: oklch(0.145 0 0);
     --ring: oklch(0.65 0.18 253);
   }
 }
 
 @theme inline {
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-ring: var(--ring);
 }
@@ -70,17 +75,66 @@
   padding-left: 0;
 }
 
-.tiptap-extension-editor li[data-type="taskItem"] {
+/* By the list, not li[data-type]: the live editor's items don't carry it. */
+.tiptap-extension-editor ul[data-type="taskList"] > li {
   display: flex;
   gap: 0.5rem;
 }
 
-.tiptap-extension-editor li[data-type="taskItem"] > label {
+.tiptap-extension-editor ul[data-type="taskList"] > li > label {
   flex: 0 0 auto;
   user-select: none;
+  /* A 24 px box, centred on the task's first line. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  align-self: flex-start;
+  width: 24px;
+  height: 24px;
+  margin-block: calc((1lh - 24px) / 2);
 }
 
-.tiptap-extension-editor li[data-type="taskItem"] > div {
+/* The checkbox itself is the 24 px target; its mark is drawn at 16 px inside. */
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"] {
+  appearance: none;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  margin: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]:focus-visible {
+  outline: 2px solid var(--ring);
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]::before,
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]::after {
+  content: "";
+  grid-area: 1 / 1;
+  box-sizing: border-box;
+  width: 16px;
+  height: 16px;
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]::before {
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]:checked::before {
+  border-color: var(--primary);
+  background: var(--primary);
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > label > input[type="checkbox"]:checked::after {
+  background: var(--primary-foreground);
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='none' stroke='black' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 8.5l2.5 2.5L12 5.5'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+
+.tiptap-extension-editor ul[data-type="taskList"] > li > div {
   flex: 1 1 auto;
 }
 
@@ -95,6 +149,12 @@
   float: left;
   height: 0;
   pointer-events: none;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tiptap-extension-editor .is-editor-empty:first-child::before {
+    color: #a3a3a3;
+  }
 }
 
 /* Site security details under a side-panel row (site-risk.tsx). */

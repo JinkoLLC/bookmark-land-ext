@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildImportModel, type NativeNode } from "./import-tree";
+import { allFoldersMerge, anyRootTicked, buildImportModel, type NativeNode } from "./import-tree";
 
 const bm = (id: string, url: string, title = `t-${id}`): NativeNode => ({
   id,
@@ -69,9 +69,27 @@ describe("buildImportModel", () => {
     const model = buildImportModel(roots, NONE);
     expect(model.importableCount).toBe(1);
     expect(model.excludedSchemeCount).toBe(3);
+    expect(model.excludedTooLongCount).toBe(0);
     expect(model.bookmarks).toEqual([
       { url: "https://ok.com/", title: "t-103", folderKey: "10" },
     ]);
+  });
+
+  it("counts overlong web addresses apart from non-web schemes", () => {
+    const long = `https://long.example/${"a".repeat(2048)}`;
+    const roots = [
+      folder("1", "Bar", [
+        bm("100", long),
+        bm("101", "chrome://settings"),
+        folder("10", "F", [bm("102", long), bm("103", "https://ok.com/")]),
+      ]),
+    ];
+    const model = buildImportModel(roots, NONE);
+    expect(model.importableCount).toBe(1);
+    expect(model.excludedSchemeCount).toBe(1);
+    expect(model.excludedTooLongCount).toBe(2);
+    // Nothing loose on the root was kept, so it gets no collection of its own.
+    expect(model.folders.map((f) => f.key)).toEqual(["10"]);
   });
 
   it("excluding a folder drops its whole subtree; excluding a root drops the root", () => {
@@ -109,6 +127,8 @@ describe("buildImportModel", () => {
       "d4",
     ]);
     expect(model.mergedFolderIds).toEqual(["d5", "d6"]);
+    // Each merged folder names the nearest kept folder above it.
+    expect(model.mergedInto).toEqual({ d5: "D4", d6: "D4" });
     const byUrl = Object.fromEntries(
       model.bookmarks.map((b) => [b.url, b.folderKey]),
     );
@@ -131,6 +151,7 @@ describe("buildImportModel", () => {
 
     expect(model.folders.map((f) => f.key)).toEqual(["d0", "d1", "d2", "d3"]);
     expect(model.mergedFolderIds).toEqual(["d4", "d5", "d6"]);
+    expect(model.mergedInto).toEqual({ d4: "D3", d5: "D3", d6: "D3" });
     const byUrl = Object.fromEntries(
       model.bookmarks.map((b) => [b.url, b.folderKey]),
     );
@@ -145,8 +166,10 @@ describe("buildImportModel", () => {
         folder("10", "Dev", [bm("101", "https://a.com/")]),
       ]),
     ];
-    const model = buildImportModel(roots, NONE, 5);
+    const model = buildImportModel(roots, NONE, 5, "Field trials");
     expect(model.folders).toEqual([]);
+    // Nothing is kept above them, so they merge straight into the destination.
+    expect(model.mergedInto).toEqual({ "1": "Field trials", "10": "Field trials" });
     // Loose and foldered bookmarks all fall through to the destination.
     expect(model.bookmarks.map((b) => b.folderKey)).toEqual([
       undefined,
@@ -155,6 +178,25 @@ describe("buildImportModel", () => {
     // Both the root (for its loose bookmark) and the folder show as merged.
     expect(model.mergedFolderIds).toEqual(["1", "10"]);
     expect(model.importableCount).toBe(2);
+    expect(allFoldersMerge(model)).toBe(true);
+  });
+
+  it("names both targets when a deep tree meets a deep destination", () => {
+    // Destination at depth 3 (baseDepth 4): only top-level folders are kept.
+    const roots = [
+      folder("1", "Bar", [
+        bm("100", "https://loose.com/"),
+        folder("10", "Dev", [
+          folder("11", "Frontend", [folder("12", "CSS", [bm("101", "https://a.com/")])]),
+        ]),
+      ]),
+    ];
+    const model = buildImportModel(roots, NONE, 4, "Field trials");
+    expect(model.folders.map((f) => f.name)).toEqual(["Bar", "Dev"]);
+    expect(model.mergedInto).toEqual({ "11": "Dev", "12": "Dev" });
+    // One target, but not every folder merges: the rows keep their lines.
+    expect(allFoldersMerge(model)).toBe(false);
+    expect(model.bookmarks.map((b) => b.folderKey)).toEqual(["root:1", "10"]);
   });
 
   it("baseDepth 0 leaves the root-import behavior unchanged", () => {
@@ -192,5 +234,20 @@ describe("buildImportModel", () => {
     const roots = [folder("1", "Bar", [bm("100", "https://a.com/", "  ")])];
     const model = buildImportModel(roots, NONE);
     expect(model.bookmarks[0].title).toBeUndefined();
+  });
+});
+
+describe("anyRootTicked", () => {
+  // Ticked, but nothing in it can be imported: not the same as an empty selection.
+  const roots: NativeNode[] = [
+    { id: "1", title: "Bookmarks bar", children: [{ id: "10", title: "Settings", url: "chrome://settings" }] },
+    { id: "2", title: "Other bookmarks", children: [{ id: "20", title: "Empty", children: [] }] },
+  ];
+
+  it("tells ticked folders with nothing importable from an empty selection", () => {
+    expect(buildImportModel(roots, new Set()).importableCount).toBe(0);
+    expect(anyRootTicked(roots, new Set())).toBe(true);
+    expect(anyRootTicked(roots, new Set(["1"]))).toBe(true);
+    expect(anyRootTicked(roots, new Set(["1", "2"]))).toBe(false);
   });
 });

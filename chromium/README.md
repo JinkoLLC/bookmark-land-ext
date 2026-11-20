@@ -70,12 +70,12 @@ The extension is capture-first: every save creates or updates a bookmark.land
 bookmark and never writes to Chrome's native bookmark tree. The toolbar popup
 uses a two-step Quick save flow: opening it checks whether the active page is
 already in your library, and an unsaved page is only written after you click
-**Add to bookmark.land**. The keyboard shortcut and context menus save
+**Save to bookmark.land**. The keyboard shortcut and context menus save
 directly.
 
 You can save from:
 
-- The toolbar popup for the active web page, then **Add to bookmark.land**.
+- The toolbar popup for the active web page, then **Save to bookmark.land**.
 - The keyboard shortcut (`Ctrl+Shift+S` on Windows/Linux, `Command+Shift+S`
   on macOS) saves the active page immediately, then opens the popup for
   organizing on Chrome 127+. Users can rebind it at
@@ -185,7 +185,7 @@ For Pro/Business accounts, selected collections show their note inline. Notes
 can be viewed, added, and edited directly in the side panel with the same basic
 rich-text schema as the web editor: bold, italic, headings, bullet/numbered
 lists, checklists, and links. The full web editor remains available from the
-"Open in web" / bookmark.land links for larger editing sessions.
+"Open in bookmark.land" / bookmark.land links for larger editing sessions.
 
 The manifest includes the `sidePanel` permission so the popup can open and host
 the Library panel.
@@ -205,6 +205,40 @@ Opening the popup on a page that is already in your library does not create a
 duplicate bookmark. The popup reports that the page is already saved and opens
 the same organize controls for the existing bookmark, so collection, tag, and
 favorite changes apply to the saved item.
+
+## Short link and QR code
+
+On any `http`/`https` page the popup has two more buttons, after the save
+controls. Each opens a view that replaces the popup's content; Back (or
+Escape, where the browser passes it on) returns to the button that opened it.
+
+- **QR code** draws a plain QR code of the page's address in the browser
+  (`utils/qr-encode.ts`, an encoder written here, so there is no QR
+  dependency; error correction M). Nothing is sent or stored, it isn't
+  tracked, and it works signed out. Copy image and Download PNG give a
+  1024 px PNG; Download SVG the vector.
+- **Short link** (signed in) creates a `bkmk.to/<ending>` short link for the
+  page with `api.shortLinks.create`, copies it, and shows its tracked QR code
+  (the short link plus `?qr`, which the redirect counts as a scan). A page
+  that already has a short link gets that one back instead of a new one.
+
+What is sent when: opening the popup loads the allowance
+(`api.shortLinks.usage`), and opening the Short link view loads the account's
+short links (`api.shortLinks.list`). Neither request carries the page's
+address; the popup compares the list with the address itself, by exact match
+of `new URL(address).href`. Only **Create short link** sends the address. A
+short link uses the month's allowance and deleting it doesn't give that back,
+so nothing is created without that click, and a creation is never sent twice:
+while one is unanswered the popup keeps a record in `storage.session`, and if
+the popup closed before the answer it asks before creating again. Addresses
+the server always refuses (a user name or password in it, an IP address, a
+host without a dot, a `bkmk.to` address, more than 2,048 characters) are
+refused in the popup and never sent. A short link created on a saved page is
+attached to that Bookmark.
+
+No permission was added. Copying uses the page's own Clipboard API from the
+click, downloads are ordinary `<a download>` links, and the record uses the
+`storage` permission the extension already had.
 
 ## Site security label
 
@@ -234,7 +268,8 @@ The Chrome Web Store listing links to `https://bookmark.land/extension/privacy`,
 which lists every permission, what
 the extension sends to bookmark.land, and the store's Limited Use statement.
 The popup footer repeats the one browsing-activity use (the saved-page badge
-looks the active tab's URL up in the user's library). Any permission change
+looks the active tab's URL up in the user's library), and says that creating
+a short link stores the page's address with it. Any permission change
 must update that page and the popup note too, so call it out in the pull request.
 
 ## Auth model

@@ -74,11 +74,21 @@ export function CollectionNoteEditor({
         HTMLAttributes: { class: "tiptap-link", rel: "noopener noreferrer" },
       }),
       Placeholder.configure({
-        placeholder: "Add notes, checklists, or bookmark links...",
+        placeholder: "Add notes, checklists, or bookmark links…",
       }),
     ],
     content: initialHtml,
     editable: true,
+    // The editor covers the panel: typing starts in it.
+    autofocus: "end",
+    editorProps: {
+      // The editable area has no role of its own, and a name needs one.
+      attributes: {
+        role: "textbox",
+        "aria-multiline": "true",
+        "aria-label": `Note for ${collectionName}`,
+      },
+    },
     onUpdate: ({ editor: activeEditor }) => {
       setHtmlLength(normalizedHtml(activeEditor).length);
       setError(null);
@@ -97,10 +107,14 @@ export function CollectionNoteEditor({
 
     setIsSaving(true);
     setError(null);
+    // Read-only while the request runs: a change made now would not be in it.
+    editor.setEditable(false, false);
     try {
       await updateCollection({ id: collectionId, notes });
       onSaved();
     } catch (err) {
+      editor.setEditable(true, false);
+      editor.commands.focus();
       const message = err instanceof Error ? err.message : String(err);
       setError(
         message.includes("PRO_REQUIRED")
@@ -115,13 +129,16 @@ export function CollectionNoteEditor({
   const tooLong = htmlLength > COLLECTION_NOTES_LIMIT;
 
   return (
-    <section className="fixed inset-0 z-40 flex flex-col bg-neutral-50 text-neutral-950 dark:bg-neutral-950 dark:text-neutral-50">
+    <section
+      data-note-view
+      className="fixed inset-0 z-40 flex flex-col bg-neutral-50 text-neutral-950 dark:bg-neutral-950 dark:text-neutral-50"
+    >
       <header className="border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
         <p className="truncate text-sm font-semibold">{collectionName}</p>
-        <p className="text-xs text-neutral-500">Editing collection note</p>
+        <p className="text-xs text-neutral-500 dark:text-neutral-400">Editing collection note</p>
       </header>
 
-      <Toolbar editor={editor} />
+      <Toolbar editor={editor} disabled={!editor || isSaving} />
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         <div className="tiptap-extension-editor rounded-lg border border-neutral-200 bg-white px-3 py-2 dark:border-neutral-800 dark:bg-neutral-900">
@@ -130,7 +147,7 @@ export function CollectionNoteEditor({
       </div>
 
       {error && (
-        <p className="border-t border-red-200 px-3 py-2 text-xs text-red-600 dark:border-red-900 dark:text-red-400">
+        <p role="alert" className="border-t border-red-200 px-3 py-2 text-xs text-red-600 dark:border-red-900 dark:text-red-400">
           {error}
         </p>
       )}
@@ -138,7 +155,7 @@ export function CollectionNoteEditor({
       <footer className="flex items-center gap-2 border-t border-neutral-200 px-3 py-2 dark:border-neutral-800">
         <span
           className={`mr-auto text-xs ${
-            tooLong ? "font-semibold text-red-600 dark:text-red-400" : "text-neutral-500"
+            tooLong ? "font-semibold text-red-600 dark:text-red-400" : "text-neutral-500 dark:text-neutral-400"
           }`}
         >
           {htmlLength.toLocaleString()} / {COLLECTION_NOTES_LIMIT.toLocaleString()}
@@ -147,7 +164,7 @@ export function CollectionNoteEditor({
           type="button"
           onClick={onCancel}
           disabled={isSaving}
-          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          className="rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:opacity-60 dark:border-neutral-700 dark:hover:bg-neutral-900"
         >
           Cancel
         </button>
@@ -155,7 +172,7 @@ export function CollectionNoteEditor({
           type="button"
           onClick={() => void save()}
           disabled={!editor || isSaving || tooLong}
-          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-60"
+          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60"
         >
           {isSaving ? "Saving…" : "Save"}
         </button>
@@ -164,7 +181,7 @@ export function CollectionNoteEditor({
   );
 }
 
-function Toolbar({ editor }: { editor: Editor | null }) {
+function Toolbar({ editor, disabled }: { editor: Editor | null; disabled: boolean }) {
   const setLink = useCallback(() => {
     if (!editor) return;
     const previousHref = editor.getAttributes("link").href as string | undefined;
@@ -184,7 +201,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
     <div className="flex flex-wrap items-center gap-1 border-b border-neutral-200 px-2 py-1 dark:border-neutral-800">
       <ToolButton
         active={editor?.isActive("bold") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Bold"
         onClick={() => editor?.chain().focus().toggleBold().run()}
       >
@@ -192,7 +209,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       </ToolButton>
       <ToolButton
         active={editor?.isActive("italic") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Italic"
         onClick={() => editor?.chain().focus().toggleItalic().run()}
       >
@@ -200,7 +217,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       </ToolButton>
       <ToolButton
         active={editor?.isActive("heading", { level: 2 }) ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Heading"
         onClick={() => editor?.chain().focus().toggleHeading({ level: 2 }).run()}
       >
@@ -209,7 +226,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       <span className="mx-1 h-4 w-px bg-neutral-300 dark:bg-neutral-700" />
       <ToolButton
         active={editor?.isActive("bulletList") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Bullet list"
         onClick={() => editor?.chain().focus().toggleBulletList().run()}
       >
@@ -217,7 +234,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       </ToolButton>
       <ToolButton
         active={editor?.isActive("orderedList") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Ordered list"
         onClick={() => editor?.chain().focus().toggleOrderedList().run()}
       >
@@ -225,7 +242,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       </ToolButton>
       <ToolButton
         active={editor?.isActive("taskList") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Checklist"
         onClick={() => editor?.chain().focus().toggleTaskList().run()}
       >
@@ -234,7 +251,7 @@ function Toolbar({ editor }: { editor: Editor | null }) {
       <span className="mx-1 h-4 w-px bg-neutral-300 dark:bg-neutral-700" />
       <ToolButton
         active={editor?.isActive("link") ?? false}
-        disabled={!editor}
+        disabled={disabled}
         label="Link"
         onClick={setLink}
       >
@@ -265,7 +282,7 @@ function ToolButton({
       title={label}
       disabled={disabled}
       onClick={onClick}
-      className={`rounded-md p-1.5 disabled:opacity-50 ${
+      className={`rounded-md p-1.5 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:cursor-not-allowed disabled:opacity-60 ${
         active
           ? "bg-neutral-900 text-white dark:bg-white dark:text-neutral-950"
           : "text-neutral-600 hover:bg-neutral-100 dark:text-neutral-300 dark:hover:bg-neutral-900"

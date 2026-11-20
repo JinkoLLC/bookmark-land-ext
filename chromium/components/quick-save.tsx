@@ -1,10 +1,12 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
+import { LibraryErrorBoundary } from "@/components/library-error-boundary";
 import { OrganizeSection } from "@/components/organize";
 import { SiteRiskNotice, useSiteRisks } from "@/components/site-risk";
+import { StatusLine } from "@/components/status-line";
 import { REFRESH_BADGE_MESSAGE } from "@/utils/messages";
 import {
   isSaveableUrl,
@@ -12,27 +14,63 @@ import {
   stateFromResult,
   stateFromError,
   deriveQuickSaveView,
+  limitSentence,
   type QuickSaveState,
 } from "@/utils/quick-save";
 import { extractDomain } from "../shared/url";
 
 type TabInfo = { url: string; title?: string };
 
+const MUTED = "text-neutral-500 dark:text-neutral-400";
+
+/** Where "Upgrade to save more" goes, from the popup and its right-click banner. */
+export function openUpgrade() {
+  void browser.tabs.create({
+    url: `${import.meta.env.WXT_WEB_APP_URL}/settings`,
+  });
+}
+
+/** The page the popup is about: its title and its site, signed in or out. */
+export function PageLines({ tab }: { tab: TabInfo }) {
+  return (
+    <div className="min-w-0">
+      {tab.title?.trim() && (
+        <p className="line-clamp-2 font-medium" title={tab.title}>
+          {tab.title.trim()}
+        </p>
+      )}
+      <p className={`mt-0.5 truncate text-xs ${MUTED}`} title={tab.url}>
+        {extractDomain(tab.url)}
+      </p>
+    </div>
+  );
+}
+
 /**
  * Two-step Quick save: opening the popup only CHECKS the page (no writes);
  * the user adds it with an explicit click. Already-saved pages go straight
  * to edit mode. Once a save completes, closing the popup never undoes it.
  */
-export function QuickSaveSection() {
+export function QuickSaveSection({
+  onBookmark,
+}: {
+  /** Told which Bookmark the page is: null = none, undefined = still checking or saving. */
+  onBookmark?: (bookmarkId: string | null | undefined) => void;
+}) {
   // undefined = resolving; null = not a saveable page
   const [tab, setTab] = useState<TabInfo | null | undefined>(undefined);
+  // A web page whose address is over the length a Bookmark takes.
+  const [tooLong, setTooLong] = useState(false);
   const [saveState, setSaveState] = useState<QuickSaveState | null>(null);
   const createBookmark = useMutation(api.bookmarkMutations.create);
+  const statusLine = useRef<HTMLParagraphElement>(null);
+  const action = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     void browser.tabs
       .query({ active: true, currentWindow: true })
       .then(([active]) => {
+        setTooLong(!isSaveableUrl(active?.url) && /^https?:\/\//.test(active?.url ?? ""));
         setTab(
           active && isSaveableUrl(active.url)
             ? { url: active.url, title: active.title }
@@ -56,6 +94,14 @@ export function QuickSaveSection() {
   const site = tab ? extractDomain(tab.url) : "";
   const siteRisk = useSiteRisks(tab ? [site] : []).get(site);
 
+  // A finished save removes the button that had focus: move focus to the
+  // outcome (or, after a failure, to the way out) so it never falls to <body>.
+  const status = saveState?.status;
+  useEffect(() => {
+    if (status === "error") action.current?.focus();
+    else if (status && status !== "saving") statusLine.current?.focus();
+  }, [status]);
+
   const add = async () => {
     if (!tab) return;
     setSaveState({ status: "saving" });
@@ -76,130 +122,130 @@ export function QuickSaveSection() {
     }
   };
 
-  const pageLine = tab ? (
-    <p className="truncate text-neutral-500" title={tab.title || tab.url}>
-      {tab.title?.trim() || tab.url}
-    </p>
-  ) : null;
+  const flow = view.kind === "save-flow" ? view.state : null;
+  const saving = flow?.status === "saving";
+  const failure = flow?.status === "error" ? flow : null;
+  const bookmarkId =
+    view.kind === "already-saved"
+      ? view.bookmarkId
+      : flow && "bookmarkId" in flow
+        ? flow.bookmarkId
+        : null;
+
+  // A short link made from this popup is attached to the page's Bookmark, so
+  // the root waits for the check, and for a save in flight, to know it.
+  const unknown = tab === undefined || saving || (tab !== null && existing === undefined && !saveState);
+  const pageBookmark = unknown ? undefined : bookmarkId;
+  useEffect(() => onBookmark?.(pageBookmark), [onBookmark, pageBookmark]);
 
   return (
     <>
-      <div className="flex flex-col gap-2 border-b border-neutral-200 pb-3 dark:border-neutral-800">
-        {/* A security warning comes first, above saving. */}
-        {siteRisk && <SiteRiskNotice risk={siteRisk} />}
-        {view.kind === "checking" && (
-          <p className="text-neutral-500">Checking this page…</p>
-        )}
-        {view.kind === "unsupported" && (
-          <p className="text-neutral-500">
-            This page can&apos;t be saved — only web pages (http/https) can.
-          </p>
-        )}
-        {view.kind === "ready" && (
-          <>
-            {pageLine}
-            <button
-              type="button"
-              autoFocus
-              onClick={() => void add()}
-              className="rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-ring"
-            >
-              Add to bookmark.land
-            </button>
-          </>
-        )}
-        {view.kind === "already-saved" && (
-          <>
-            <p className="font-medium">Already in your library</p>
-            {pageLine}
-          </>
-        )}
-        {view.kind === "save-flow" && (
-          <>
-            <SaveFlowStatus state={view.state} onRetry={() => void add()} />
-            {view.state.status !== "saving" && pageLine}
-          </>
-        )}
-      </div>
-      {view.kind === "already-saved" && (
-        <OrganizeSection bookmarkId={view.bookmarkId as Id<"bookmarks">} />
+      {/* A security warning comes first, above saving. */}
+      {siteRisk && <SiteRiskNotice risk={siteRisk} />}
+      {view.kind === "checking" && <p className={MUTED}>Checking this page…</p>}
+      {view.kind === "unsupported" && (
+        <p className={MUTED}>
+          {tooLong
+            ? "This address is too long to save."
+            : "This page can't be saved — only web pages (http/https) can."}
+        </p>
       )}
-      {view.kind === "save-flow" && "bookmarkId" in view.state && (
-        <OrganizeSection
-          bookmarkId={view.state.bookmarkId as Id<"bookmarks">}
+      {bookmarkId && (
+        <StatusLine
+          ref={statusLine}
+          tone="ok"
+          role="status"
+          tabIndex={-1}
+          className="font-medium"
+        >
+          {flow?.status === "saved"
+            ? "Saved to your library"
+            : flow?.status === "restored"
+              ? "Restored from Trash"
+              : "Already in your library"}
+        </StatusLine>
+      )}
+      {failure && (
+        <StatusLine tone="error" role="alert" className="font-medium">
+          {failure.kind === "limit"
+            ? limitSentence(failure.limit)
+            : "Couldn't save this page. Check your connection and retry."}
+        </StatusLine>
+      )}
+      {tab && <PageLines tab={tab} />}
+      {/* One button through ready, saving and a failed save, so it keeps
+          focus; after a limit refusal it becomes the way to upgrade. */}
+      {(view.kind === "ready" || saving || failure) && (
+        <button
+          ref={action}
+          type="button"
+          autoFocus
+          aria-disabled={saving}
+          aria-describedby="saving-note"
+          onClick={() => {
+            if (saving) return;
+            if (failure?.kind === "limit") openUpgrade();
+            else void add();
+          }}
+          className="rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:opacity-70"
+        >
+          {saving
+            ? "Saving…"
+            : failure?.kind === "limit"
+              ? "Upgrade to save more"
+              : failure
+                ? "Retry"
+                : "Save to bookmark.land"}
+        </button>
+      )}
+      {/* Why the button does nothing while saving; there before, so its text is announced when it arrives.
+          The button's label shows the progress, so this is for a screen reader and nothing moves. */}
+      {(view.kind === "ready" || saving || failure) && (
+        <p id="saving-note" role="status" className="sr-only">
+          {saving && "Saving this page…"}
+        </p>
+      )}
+      {bookmarkId && (
+        <Organize
+          bookmarkId={bookmarkId as Id<"bookmarks">}
+          // Retry goes away when the reads answer: focus waits on the outcome above.
+          onRetry={() => statusLine.current?.focus()}
         />
       )}
     </>
   );
 }
 
-function SaveFlowStatus({
-  state,
-  onRetry,
-}: {
-  state: QuickSaveState;
-  onRetry: () => void;
-}) {
-  switch (state.status) {
-    case "saving":
-      return <p className="text-neutral-500">Saving this page…</p>;
-    case "saved":
-      return <p className="font-medium text-primary">Saved to your library</p>;
-    case "restored":
-      return (
-        <p className="font-medium text-primary">
-          Restored from Trash
-          {state.existingTitle ? ` — ${state.existingTitle}` : ""}
-        </p>
-      );
-    case "already-saved":
-      return <p className="font-medium">Already in your library</p>;
-    case "unsupported":
-      return null; // unreachable in the save flow
-    case "error":
-      return state.kind === "limit" ? (
-        <LimitError limit={state.limit} />
-      ) : (
-        <RetryableError onRetry={onRetry} />
-      );
-  }
-}
-
-function LimitError({ limit }: { limit: number }) {
-  const openUpgrade = () => {
-    void browser.tabs.create({
-      url: `${import.meta.env.WXT_WEB_APP_URL}/settings`,
-    });
-  };
+/**
+ * The organizing controls with their failure kept to themselves: one of their
+ * reads throwing (as convex/react does at the call site) leaves the confirmed
+ * save, the title and the rest of the popup as they are. Retry mounts the
+ * reads afresh, which drops their subscriptions so the server is asked again.
+ */
+function Organize({ bookmarkId, onRetry }: { bookmarkId: Id<"bookmarks">; onRetry: () => void }) {
+  const [attempt, setAttempt] = useState(0);
   return (
-    <div className="flex flex-col gap-2">
-      <p className="font-medium text-red-600 dark:text-red-400">
-        You&apos;ve reached your plan&apos;s limit of {limit} bookmarks.
-      </p>
-      <button
-        type="button"
-        onClick={openUpgrade}
-        className="self-start rounded-md bg-primary px-3 py-1.5 font-medium text-primary-foreground hover:opacity-90 focus-visible:outline-2 focus-visible:outline-ring"
-      >
-        Upgrade for unlimited bookmarks
-      </button>
-    </div>
-  );
-}
-
-function RetryableError({ onRetry }: { onRetry: () => void }) {
-  return (
-    <div className="flex flex-col gap-2">
-      <p className="font-medium text-red-600 dark:text-red-400">
-        Couldn&apos;t save this page. Check your connection and retry.
-      </p>
-      <button
-        type="button"
-        onClick={onRetry}
-        className="self-start rounded-md border border-neutral-300 px-3 py-1.5 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
-      >
-        Retry
-      </button>
-    </div>
+    <LibraryErrorBoundary
+      key={attempt}
+      fallback={() => (
+        <div className="flex items-start gap-2">
+          <StatusLine tone="error" role="alert" className="min-w-0 flex-1">
+            Couldn&apos;t load the collection and tags for this bookmark.
+          </StatusLine>
+          <button
+            type="button"
+            onClick={() => {
+              onRetry();
+              setAttempt(attempt + 1);
+            }}
+            className="shrink-0 rounded-md border border-neutral-300 px-3 py-2 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+    >
+      <OrganizeSection bookmarkId={bookmarkId} />
+    </LibraryErrorBoundary>
   );
 }

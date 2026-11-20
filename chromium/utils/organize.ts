@@ -48,6 +48,47 @@ export function buildCollectionOptions(
   return out;
 }
 
+/** A row of the popup's collection picker. No id = Unsorted. */
+export interface PickerRow {
+  id?: string;
+  name: string;
+  /** Names of the collections above it, outermost first; "" at the top level. */
+  path: string;
+  icon?: string;
+  color?: string;
+}
+
+/** The picker's flat rows: Unsorted first, then the collections in tree order,
+ * each nested one with its parent path (which tells same-named ones apart). */
+export function pickerRows(collections: CollectionLike[]): PickerRow[] {
+  const byId = new Map(collections.map((c) => [c._id, c]));
+  const pathOf = (id: string) => {
+    const names: string[] = [];
+    // Options are reachable from a root, so this walk ends.
+    for (let c = byId.get(byId.get(id)?.parentId ?? ""); c; c = byId.get(c.parentId ?? "")) {
+      names.unshift(c.name);
+    }
+    return names.join(" / ");
+  };
+  return [
+    { name: "Unsorted", path: "" },
+    ...buildCollectionOptions(collections).map(({ id, name, icon, color }) => ({
+      id,
+      name,
+      path: pathOf(id),
+      icon,
+      color,
+    })),
+  ];
+}
+
+/** Rows whose name or parent path contains the filter text. */
+export function filterPickerRows(rows: PickerRow[], text: string): PickerRow[] {
+  const q = text.trim().toLowerCase();
+  if (!q) return rows;
+  return rows.filter((r) => r.name.toLowerCase().includes(q) || r.path.toLowerCase().includes(q));
+}
+
 export interface CollectionFeed {
   collectionId: string;
   pages: unknown[];
@@ -57,6 +98,9 @@ export interface CollectionFeed {
 export function livePageCounts(feeds: CollectionFeed[] | undefined): Map<string, number> {
   return new Map((feeds ?? []).map((feed) => [feed.collectionId, feed.pages.length]));
 }
+
+/** The marker after the name of a collection that a live page shows, in the popup's picker and the import's destination: said where it is chosen. */
+export const ON_PUBLIC_PAGE = " · on a public page";
 
 /** The warning for a collection that live pages show; undefined when none does. */
 export function pageFeedNote(count: number | undefined, what: "bookmark" | "import"): string | undefined {
@@ -94,3 +138,7 @@ export function suggestTags(
   substring.sort();
   return [...prefix, ...substring].slice(0, limit);
 }
+
+/** The tag field after a tag was saved: cleared, unless the user has typed something newer since. */
+export const inputAfterTagSaved = (current: string, submitted: string): string =>
+  current === submitted ? "" : current;
