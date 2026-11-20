@@ -218,7 +218,7 @@ type LinkView = Extract<View, { kind: "link" }>;
 /** What a short link's view opens on: how it came to be, or why it doesn't open. */
 const linkStatus = (view: LinkView) =>
   view.state === "paused"
-    ? "This page's short link is paused."
+    ? "This page's short link is paused, so it won't open."
     : view.state === "blocked"
       ? "This page's short link was blocked and no longer opens."
       : view.outcome === "created"
@@ -254,7 +254,7 @@ function LinkBlock({
       ref={copyButton}
       type="button"
       onClick={() => void copyText(view.shortUrl).then((ok) => latest("link", setLink, setImage)(ok ? "copied" : "failed"))}
-      // Already on the clipboard: Copy is no longer the next thing to do. The clear border keeps its size.
+      // Just copied: Copy is no longer the next thing to do. The clear border keeps its size.
       className={`shrink-0 ${clipboard && last?.what === "link" ? OUTLINE : `border border-transparent ${FILLED}`}`}
     >
       {link === "copied" ? "Copied" : "Copy"}
@@ -265,7 +265,7 @@ function LinkBlock({
       className={MUTED}
       text={
         view.state === "blocked"
-          ? `Opened ${view.targetUrl}`
+          ? `Used to open ${view.targetUrl}`
           : view.state === "paused"
             ? `Points to ${view.targetUrl}`
             : `Opens ${view.targetUrl}`
@@ -276,14 +276,16 @@ function LinkBlock({
     <>
       {/* Announced by the view's own status region. */}
       {/* Pausing is usually the user's own choice: only a block is an error. */}
-      <StatusLine tone={view.state === "active" ? "ok" : view.state === "paused" ? "paused" : "error"} className="font-medium">
+      {/* The check is for a creation: a short link that was already there gets a plain link icon. */}
+      <StatusLine
+        tone={view.state === "paused" ? "paused" : view.state === "blocked" ? "error" : view.outcome === "created" ? "ok" : "link"}
+        className="font-medium"
+      >
         {linkStatus(view)}
       </StatusLine>
       {clipboard && <p className={`text-xs ${MUTED}`}>{clipboard}</p>}
       {/* What a link that doesn't open pointed to comes before the link. */}
       {view.state !== "active" && destination}
-      {/* Its own line: an address breaks anywhere, a sentence shouldn't. */}
-      {view.state === "paused" && <p className={`text-xs ${MUTED}`}>It won&apos;t open while paused.</p>}
       {view.state === "active" ? (
         <div className="flex items-center gap-2">
           <input
@@ -347,7 +349,18 @@ function LinkBlock({
  * allowance (neither request carries the page's address) and compares them
  * with the address here; only Create sends the address.
  */
-export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: ShortLinkModel; onBack: () => void }) {
+export function ShortLinkView({
+  tab,
+  model,
+  onBack,
+  onQr,
+}: {
+  tab: PageTab;
+  model: ShortLinkModel;
+  onBack: () => void;
+  /** Opens the QR code view over this one; absent when this view was opened from it. */
+  onQr?: () => void;
+}) {
   const { usage, create, reload, startOver } = model;
   // The root derives a view whenever there is a page, which this view needs to open.
   const view = model.view!;
@@ -461,6 +474,21 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
         <StatusLine tone="error" role="alert" className="font-medium">
           {view.sentence}
         </StatusLine>
+        {/* Not a dead end: the plain QR code is made in the browser, whatever the address. */}
+        {view.local && (
+          <p className={`text-xs ${MUTED}`}>
+            Short links need a public web address.
+            {onQr && (
+              <>
+                {" A "}
+                <button type="button" onClick={onQr} className={`min-h-6 ${TEXT_LINK}`}>
+                  QR code
+                </button>
+                {" still works for it."}
+              </>
+            )}
+          </p>
+        )}
       </>
     );
   } else if (view.kind === "link") {

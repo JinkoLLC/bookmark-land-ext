@@ -141,11 +141,12 @@ function PanelContent() {
           className="w-full rounded-md border border-neutral-300 bg-transparent px-2 py-1.5 placeholder:text-neutral-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:placeholder:text-neutral-400"
         />
       </div>
-      {/* Always mounted, so a search's outcome is announced while focus stays in the field. */}
+      {/* Always mounted, so a search's outcome is announced while focus stays in the field.
+          The visible count is this same element: it is read once. */}
       <p
         role="status"
         className={
-          term === null || results?.length
+          term === null
             ? "sr-only"
             : "px-4 pt-2 text-neutral-500 dark:text-neutral-400"
         }
@@ -298,7 +299,13 @@ function BrowseView({
           </p>
         )}
       </div>
-      <PanelDivider treeRef={treeRef} listRef={listRef} onResize={setTreeHeight} />
+      <PanelDivider
+        treeRef={treeRef}
+        listRef={listRef}
+        onResize={setTreeHeight}
+        // Only "All bookmarks", or no bookmarks to make room for: nothing to resize.
+        showButtons={rows.length > 0 && hasBookmarks}
+      />
       <CollectionNotesPanel
         collection={selectedCollection}
         canAddNotes={canAddCollectionNotes}

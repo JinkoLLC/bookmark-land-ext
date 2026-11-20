@@ -18,6 +18,7 @@ import {
   destinationBaseDepth,
   destinationName as destinationNameFor,
   importedCollectionName,
+  importReadiness,
   type ImportDestination,
 } from "@/utils/import-destination";
 import { buildCollectionOptions, livePageCounts, type CollectionFeed } from "@/utils/organize";
@@ -237,11 +238,12 @@ function Wizard() {
     [roots, excluded, baseDepth, destinationName],
   );
   const destinationArg = destinationArgFor(destination, importedName);
-  // An existing collection may be shown on a live page: no import before its notice can appear.
-  // The same holds when that information failed to load.
-  // Nor while the collection list itself failed to load.
-  const feedsPending =
-    destination.kind === "existing" && (livePages !== "ready" || collectionsFailed);
+  // A completed read without the chosen collection: the choice is cleared, and step 3 says why.
+  useEffect(() => {
+    if (destination.kind === "existing" && destination.id && collections && !options.some((o) => o.id === destination.id)) {
+      setDestination({ kind: "existing", gone: true });
+    }
+  }, [destination, collections, options]);
 
   if (roots === "failed") {
     return (
@@ -294,7 +296,7 @@ function Wizard() {
 
   const start = async () => {
     const arg = destinationArg;
-    if (!arg || phase === "importing" || nothingSelected || feedsPending) return;
+    if (!arg || phase === "importing" || !readiness.ready) return;
     setPhase("importing");
     try {
       const result = await runImport({
@@ -315,6 +317,15 @@ function Wizard() {
 
   // Ticked folders can still hold nothing importable: that isn't an empty selection.
   const nothingImportable = nothingSelected && anyRootTicked(roots, excluded);
+  const collectionsState = collectionsFailed ? "failed" : collections ? "ready" : "loading";
+  // The button's state, the reason beside it and start()'s guard all come from this.
+  const readiness = importReadiness({
+    destination,
+    collections: collectionsState === "ready" ? options : collectionsState,
+    livePages,
+    plan: planFailed ? "failed" : sessionSummary ? "ready" : "loading",
+    selection: nothingImportable ? "nothing-importable" : nothingSelected ? "none" : "some",
+  });
   const warning = sessionSummary
     ? allowanceWarningFor(
         model.importableCount,
@@ -385,7 +396,7 @@ function Wizard() {
       <Step
         number={2}
         title="Import into"
-        hint="Your folders become collections inside it."
+        hint="Choose where to import these bookmarks."
         dimmed={nothingSelected}
       >
         <DestinationPicker
@@ -396,7 +407,7 @@ function Wizard() {
           onPage={livePageCounts(collectionFeeds)}
           livePages={livePages}
           onRetryLivePages={() => setDropped("feeds")}
-          collections={collectionsFailed ? "failed" : collections ? "ready" : "loading"}
+          collections={collectionsState}
           onRetryCollections={() => setDropped("collections")}
           disabled={phase === "importing" || nothingSelected}
         />
@@ -460,20 +471,13 @@ function Wizard() {
           </p>
         )}
 
-        {nothingImportable && (
-          <p role="status" className="mb-3 flex items-start gap-2 text-sm text-slate-900 dark:text-slate-100">
-            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
-            <span>These folders have no bookmarks that can be imported.</span>
-          </p>
-        )}
-
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
             ref={importButton}
             // aria-disabled, not disabled: the focus stays on it through a run, so a retry
             // after a failure is one key press. start() refuses what this greys out.
-            aria-disabled={phase === "importing" || nothingSelected || destinationArg === null || feedsPending}
+            aria-disabled={phase === "importing" || !readiness.ready}
             onClick={() => void start()}
             // Disabled it still says what to do, so it is greyed rather than faded.
             className={`inline-flex max-w-full items-center justify-center gap-2 px-6 py-3 text-base shadow-lg shadow-emerald-900/20 aria-disabled:cursor-not-allowed aria-disabled:bg-slate-200 aria-disabled:text-slate-700 aria-disabled:shadow-none aria-disabled:hover:bg-slate-200 dark:aria-disabled:hover:bg-slate-800 motion-safe:not-aria-disabled:hover:-translate-y-0.5 dark:aria-disabled:bg-slate-800 dark:aria-disabled:text-slate-200 ${FILLED_BUTTON}`}
@@ -496,6 +500,19 @@ function Wizard() {
               Upgrade
             </button>
           )}
+          {/* Why Import is inert. "Select at least one folder" is the button's own label. Mounted throughout, so it is announced. */}
+          <p role="status" className="min-w-0 basis-56 grow text-sm text-slate-900 dark:text-slate-100">
+            {phase !== "importing" && !readiness.ready && (nothingImportable || !nothingSelected) && (
+              <span className="flex items-start gap-2">
+                {readiness.waiting ? (
+                  <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 motion-safe:animate-spin dark:text-emerald-400" aria-hidden="true" />
+                ) : (
+                  <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                )}
+                <span>{readiness.reason}</span>
+              </span>
+            )}
+          </p>
         </div>
       </Step>
 

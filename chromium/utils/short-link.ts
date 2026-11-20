@@ -53,13 +53,17 @@ export function refusedLocally(address: string): boolean {
   return (
     url.username !== "" ||
     url.password !== "" ||
-    /^\d+(\.\d+){3}$/.test(host) ||
-    host.startsWith("[") ||
-    !host.includes(".") ||
+    notPublic(address) ||
     host === SHORT_LINK_HOST ||
     host.endsWith(`.${SHORT_LINK_HOST}`) ||
     address.length > MAX_TARGET_LENGTH
   );
+}
+
+/** True for a host that is no public name: an IP address, or a name without a dot such as `localhost`. */
+export function notPublic(address: string): boolean {
+  const host = new URL(address).hostname;
+  return /^\d+(\.\d+){3}$/.test(host) || host.startsWith("[") || !host.includes(".");
 }
 
 export type ShortLinkState = "active" | "paused" | "blocked";
@@ -128,7 +132,8 @@ export function limitReached(
     sentences: [
       ...(monthly ? [`You've used this month's ${count(usage.monthly)} short links. You can make more on ${resets}.`] : []),
       // Deleting is permanent and gives nothing back this month, so it is only asked for when it would help now.
-      ...(kept && monthly ? [`After that you'd also need to delete ${over ? "some" : "one"}: the ${plan} plan holds up to ${cap} at a time.`] : []),
+      ...(kept && monthly && !over ? [`After that you'd also need to delete one: the ${plan} plan holds up to ${cap} at a time.`] : []),
+      ...(kept && monthly && over ? [`After that you'd also need to delete some: you have more than the ${cap} the ${plan} plan holds.`] : []),
       ...(kept && !monthly && !over ? [`You have ${cap} short links, and the ${plan} plan holds up to ${cap} at a time. Delete one to make room.`] : []),
       ...(kept && !monthly && over
         ? [`The ${plan} plan holds up to ${cap} short links at a time, and you have more than ${cap}. Delete some to get to ${count(usage.liveCap! - 1)} or fewer.`]
@@ -136,8 +141,8 @@ export function limitReached(
     ],
     upgrade: monthly && (usage.tier === "free" || usage.tier === "edu"),
     manage: kept,
-    // Only the sentence after a used-up month leaves out how many are held: the view adds that line.
-    heldUnsaid: kept && monthly,
+    // Only the sentence after a used-up month, at the cap exactly, leaves out how many are held: the view adds that line.
+    heldUnsaid: kept && monthly && !over,
   };
 }
 
@@ -304,7 +309,8 @@ export const shortLinkSession = {
 export type ShortLinkView =
   /** Short links aren't open to this account. */
   | { kind: "unavailable" }
-  | { kind: "refused"; sentence: string }
+  /** `local`: the address is no public one (see notPublic), which a plain QR code still takes. */
+  | { kind: "refused"; sentence: string; local?: boolean }
   /** The short links or the allowance failed to load. */
   | { kind: "failed" }
   | {
@@ -388,7 +394,7 @@ export function deriveShortLinkView(input: {
   } as const;
   if (creation?.status === "creating") return { ...create, wait: creation.slow ? "creating-slow" : "creating" };
   if (creation?.status === "refused") return { kind: "refused", sentence: creation.sentence };
-  if (refusedLocally(address)) return { kind: "refused", sentence: "This address can't be shortened." };
+  if (refusedLocally(address)) return { kind: "refused", sentence: "This address can't be shortened.", local: notPublic(address) };
   const match = findShortLink(rows, address);
   if (match) {
     return { kind: "link", shortUrl: match.shortUrl, targetUrl: match.targetUrl, state: shortLinkState(match), outcome: "existing", copied: null };
@@ -409,12 +415,16 @@ export function deriveShortLinkView(input: {
   };
 }
 
-/** The two copies the Short link view makes. Anything else copied since (the page's plain QR code, its address) leaves no line. */
-const ON_CLIPBOARD: Partial<Record<Copied["what"], string>> = {
-  link: "The short link is on your clipboard.",
-  "tracked-image": "The QR image is on your clipboard.",
+/**
+ * The two copies the Short link view makes, named as what was done: what the
+ * clipboard holds now isn't ours to say, since anything may have been copied
+ * elsewhere since. Another copy in the popup (the page's plain QR code, its address) leaves no line.
+ */
+const COPIED_LINE: Partial<Record<Copied["what"], string>> = {
+  link: "Short link copied.",
+  "tracked-image": "QR image copied.",
 };
 
-/** The clipboard line for the view: only beside a short link that opens, and only when the popup's latest copy was of that one. */
+/** The copy's line for the view: only beside a short link that opens, and only when the popup's latest copy was of that one. */
 export const clipboardLine = (view: ShortLinkView, copied: Copied | null) =>
-  view.kind === "link" && view.state === "active" && copied?.url === view.shortUrl ? ON_CLIPBOARD[copied.what] : undefined;
+  view.kind === "link" && view.state === "active" && copied?.url === view.shortUrl ? COPIED_LINE[copied.what] : undefined;

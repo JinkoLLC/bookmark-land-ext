@@ -99,6 +99,9 @@ export function livePageCounts(feeds: CollectionFeed[] | undefined): Map<string,
   return new Map((feeds ?? []).map((feed) => [feed.collectionId, feed.pages.length]));
 }
 
+/** The marker after the name of a collection that a live page shows, in the popup's picker and the import's destination: said where it is chosen. */
+export const ON_PUBLIC_PAGE = " · on a public page";
+
 /** The warning for a collection that live pages show; undefined when none does. */
 export function pageFeedNote(count: number | undefined, what: "bookmark" | "import"): string | undefined {
   if (!count) return undefined;

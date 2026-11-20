@@ -4,7 +4,9 @@ import {
   destinationBaseDepth,
   destinationName,
   importedCollectionName,
+  importReadiness,
   collectionWithPath,
+  COLLECTION_GONE,
 } from "./import-destination";
 
 const depths: Record<string, number> = { top: 0, nested: 2, deepest: 4 };
@@ -92,5 +94,41 @@ describe("collectionWithPath", () => {
   it("has no path at the top level and nothing for an unknown id", () => {
     expect(collectionWithPath(options, "e")).toEqual({ name: "Engineering", path: "" });
     expect(collectionWithPath(options, undefined)).toBeNull();
+  });
+});
+
+describe("importReadiness", () => {
+  const loaded = [{ id: "top" }, { id: "nested" }];
+  const base = {
+    destination: { kind: "existing", id: "top" },
+    collections: loaded,
+    livePages: "ready",
+    plan: "ready",
+    selection: "some",
+  } as const;
+  const READY = { ready: true };
+  const no = (reason: string, waiting = false) => ({ ready: false, reason, waiting });
+
+  it.each([
+    ["existing collection, everything loaded", {}, READY],
+    ["default destination", { destination: { kind: "imported" } }, READY],
+    ["default destination while the collections failed", { destination: { kind: "imported" }, collections: "failed" }, READY],
+    ["new collection, named", { destination: { kind: "new", name: "Mine" }, collections: "loading" }, READY],
+    ["new collection, name blank", { destination: { kind: "new", name: "  " } }, no("Name the new collection.")],
+    ["no collection chosen yet", { destination: { kind: "existing" } }, no("Choose a collection to import into.")],
+    ["collections retry in flight, id kept", { collections: "loading" }, no("Loading your collections…", true)],
+    ["collections retry in flight, live pages known", { collections: "loading", livePages: "ready" }, no("Loading your collections…", true)],
+    ["collections read failed", { collections: "failed" }, no("Your collections didn’t load: retry in step 2, or import into a new collection.")],
+    ["collection gone from the completed read", { destination: { kind: "existing", id: "deleted" } }, no(COLLECTION_GONE)],
+    ["collection gone, choice cleared", { destination: { kind: "existing", gone: true } }, no(COLLECTION_GONE)],
+    ["live-page check loading", { livePages: "loading" }, no("Waiting for the live-page check in step 2.", true)],
+    ["live-page check failed", { livePages: "failed" }, no("The live-page check failed: retry it in step 2.")],
+    ["plan failed", { plan: "failed" }, READY],
+    ["plan loading", { plan: "loading" }, READY],
+    ["nothing selected", { selection: "none" }, no("Select at least one folder")],
+    ["nothing importable", { selection: "nothing-importable" }, no("These folders have no bookmarks that can be imported.")],
+    ["nothing selected comes before the destination", { selection: "none", collections: "loading" }, no("Select at least one folder")],
+  ] as const)("%s", (_name, change, expected) => {
+    expect(importReadiness({ ...base, ...change })).toEqual(expected);
   });
 });

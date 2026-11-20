@@ -8,7 +8,8 @@
 
 export type ImportDestination =
   | { kind: "imported" }
-  | { kind: "existing"; id?: string }
+  // gone: the collection that was chosen is no longer in the loaded list.
+  | { kind: "existing"; id?: string; gone?: true }
   | { kind: "new"; name: string };
 
 /** Shape of the importTree action's `destination` argument. */
@@ -106,4 +107,45 @@ export function collectionWithPath(
     }
   }
   return { name: options[index].name, path: parents.join(" / ") };
+}
+
+export type ReadState = "loading" | "failed" | "ready";
+
+export const COLLECTION_GONE = "That collection is no longer available. Choose where to import again.";
+
+/**
+ * Whether Import may run, or the reason shown beside the button. The one
+ * decision behind the button's state and the submit guard: an existing
+ * destination counts only once it is in the loaded collections, so a retry
+ * in flight can't send a tree planned without the destination's depth.
+ */
+export function importReadiness({
+  destination,
+  collections,
+  livePages,
+  selection,
+}: {
+  destination: ImportDestination;
+  /** The loaded collections, or why there are none. */
+  collections: "loading" | "failed" | readonly { id: string }[];
+  livePages: ReadState;
+  /** Taken so the rule is in one place: the plan only feeds a warning and never holds an import back. */
+  plan: ReadState;
+  selection: "none" | "nothing-importable" | "some";
+}): { ready: true } | { ready: false; reason: string; /** Resolves by itself: shown with a spinner. */ waiting: boolean } {
+  const no = (reason: string, waiting = false) => ({ ready: false as const, reason, waiting });
+  if (selection === "none") return no("Select at least one folder");
+  if (selection === "nothing-importable") return no("These folders have no bookmarks that can be imported.");
+  if (destination.kind === "imported") return { ready: true };
+  if (destination.kind === "new") {
+    return destination.name.trim() ? { ready: true } : no("Name the new collection.");
+  }
+  if (collections === "loading") return no("Loading your collections…", true);
+  if (collections === "failed") return no("Your collections didn’t load: retry in step 2, or import into a new collection.");
+  if (!destination.id) return no(destination.gone ? COLLECTION_GONE : "Choose a collection to import into.");
+  if (!collections.some((c) => c.id === destination.id)) return no(COLLECTION_GONE);
+  // An import into a collection on a live page is public: not before its notice can appear.
+  if (livePages === "loading") return no("Waiting for the live-page check in step 2.", true);
+  if (livePages === "failed") return no("The live-page check failed: retry it in step 2.");
+  return { ready: true };
 }

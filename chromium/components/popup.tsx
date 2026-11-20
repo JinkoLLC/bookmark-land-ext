@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useAuth, useUser } from "@clerk/chrome-extension";
 import { useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/api";
@@ -14,7 +14,9 @@ import {
 import { MORE_BELOW, useScrollMore } from "@/hooks/use-scroll-more";
 import { useStalled } from "@/hooks/use-stalled";
 import { derivePopupAuthState } from "@/utils/popup-state";
+import { isComposing } from "@/utils/composing";
 import { moveIndex } from "@/utils/list-keys";
+import { endOnWholeRow } from "@/utils/whole-row";
 import { parseAddress, refusedLocally } from "@/utils/short-link";
 import { PageLines, QuickSaveSection } from "@/components/quick-save";
 import { PendingErrorBanner } from "@/components/pending-error";
@@ -34,6 +36,8 @@ const LABEL = "font-medium text-neutral-700 dark:text-neutral-300";
 /** Set in browser.storage.local once the full privacy text has been shown. */
 const PRIVACY_SEEN_KEY = "bookmark-land:privacy-seen";
 const PRIVACY_SEEN_AFTER_MS = 1_000;
+/** The gap between the rows of the signed-in view's middle region, in px (`gap-2`). */
+const ROW_GAP = 8;
 const HEADER =
   "flex h-11 shrink-0 items-center gap-2 border-b border-neutral-200 px-3 dark:border-neutral-800";
 
@@ -61,13 +65,7 @@ export function Popup() {
   return (
     <div className="flex max-h-[600px] w-80 flex-col bg-white text-sm text-neutral-900 dark:bg-neutral-900 dark:text-neutral-100">
       {state === "signed-in" ? (
-        <LibraryErrorBoundary
-          fallback={(retry) => (
-            <PlainView>
-              <LibraryErrorFallback onRetry={retry} />
-            </PlainView>
-          )}
-        >
+        <LibraryErrorBoundary fallback={(retry) => <LibraryErrorView onRetry={retry} />}>
           <SignedInView />
         </LibraryErrorBoundary>
       ) : state === "signed-out" ? (
@@ -179,7 +177,8 @@ function useViews() {
   useEffect(() => {
     if (top !== "qr" && top !== "short") return;
     const onKey = (event: KeyboardEvent) => {
-      if (event.key !== "Escape") return;
+      // An Escape that cancels an input method's text isn't ours.
+      if (event.key !== "Escape" || isComposing(event)) return;
       event.preventDefault();
       back();
     };
@@ -195,6 +194,30 @@ function openBookmarkLand() {
     url: `${import.meta.env.WXT_WEB_APP_URL}/dashboard`,
   });
   window.close();
+}
+
+/**
+ * A library read failed. The plain QR code needs no library (it is made in
+ * the browser), so it stays on offer under Retry, with its own Back.
+ */
+function LibraryErrorView({ onRetry }: { onRetry: () => void }) {
+  const tab = usePageTab();
+  const views = useViews();
+  return (
+    <>
+      {views.top === "qr" && tab && <QrView url={tab.url} onBack={views.back} canShorten={false} />}
+      <div className={views.top ? "hidden" : "contents"}>
+        <PlainView>
+          <LibraryErrorFallback onRetry={onRetry} />
+          {tab && (
+            <button id="qr-code-button" type="button" onClick={() => views.open("qr")} className={OUTLINE_BUTTON}>
+              QR code
+            </button>
+          )}
+        </PlainView>
+      </div>
+    </>
+  );
 }
 
 function LoadingView() {
@@ -229,6 +252,14 @@ function SignedOutView() {
         <PlainView>
           {tab && <PageLines tab={tab} />}
           <p>Sign in to bookmark.land to start saving pages.</p>
+          {/* The way forward comes before what it leads to. */}
+          <button
+            type="button"
+            onClick={openSignIn}
+            className={`rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover ${RING}`}
+          >
+            Sign in to bookmark.land
+          </button>
           <p id="signed-in-list" className={MUTED}>
             Once you&apos;re signed in:
           </p>
@@ -242,13 +273,6 @@ function SignedOutView() {
             {/* The menu labels registered in entrypoints/background.ts. */}
             <li>Right-click a page and choose <span className={LABEL}>Save to bookmark.land</span>, or a link and choose <span className={LABEL}>Save link to bookmark.land</span>.</li>
           </ul>
-          <button
-            type="button"
-            onClick={openSignIn}
-            className={`rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground hover:bg-primary-hover ${RING}`}
-          >
-            Sign in to bookmark.land
-          </button>
           {/* A QR code is made in the browser, so it needs no account. */}
           {tab && (
             <>
@@ -286,6 +310,22 @@ function SignedInView() {
   };
 
   const middle = useScrollMore();
+  // Where the middle region still scrolls, it ends in the gap under a whole row, never through the middle of one.
+  const region = middle.element;
+  useLayoutEffect(() => {
+    const content = region?.firstElementChild;
+    if (!region || !content) return;
+    const fit = () => {
+      const at = region.scrollTop;
+      endOnWholeRow(region, content.children, ROW_GAP / 2);
+      region.scrollTop = at;
+    };
+    // The rows arrive and change with the reads under them.
+    const observer = new ResizeObserver(fit);
+    observer.observe(content);
+    fit();
+    return () => observer.disconnect();
+  }, [region]);
   const link = `flex h-6 items-center underline underline-offset-2 hover:text-neutral-950 dark:hover:text-white rounded ${RING}`;
 
   return (
@@ -302,7 +342,15 @@ function SignedInView() {
               onCopied={(what) => shortLink.setLastCopied({ what, url: tab.url })}
             />
           )}
-          {view === "short" && tab && <ShortLinkView tab={tab} model={shortLink} onBack={views.back} />}
+          {view === "short" && tab && (
+            <ShortLinkView
+              tab={tab}
+              model={shortLink}
+              onBack={views.back}
+              // Each view is in the stack once: from the QR code view, Back already leads there.
+              onQr={views.stack.includes("qr") ? undefined : () => views.open("qr")}
+            />
+          )}
         </div>
       ))}
       <div className={views.top ? "hidden" : "contents"}>
@@ -336,7 +384,7 @@ function SignedInView() {
                 </button>
               </div>
             )}
-            <PrivacyNote shortLinks={Boolean(tab) && shortLink.open} saved={Boolean(bookmarkId)} />
+            <PrivacyNote shortLinks={Boolean(tab) && shortLink.open} saved={Boolean(bookmarkId)} overflows={middle.overflows} />
           </div>
         </main>
         <footer className="flex shrink-0 flex-col border-t border-neutral-200 px-3 pb-2 pt-[7px] text-xs text-neutral-700 dark:border-neutral-800 dark:text-neutral-300">
@@ -378,13 +426,25 @@ function SignedInView() {
 function PrivacyNote({
   shortLinks,
   saved,
+  overflows,
 }: {
   /** The Short link button is offered. */
   shortLinks: boolean;
   /** The page is a Bookmark: the organizing controls need the room, so the full text waits behind "More". */
   saved: boolean;
+  /** The region this is the last block of doesn't fit the popup. */
+  overflows: boolean;
 }) {
   const [open, setOpen] = useState(false);
+  // Where the popup's content doesn't fit, the text gives its room to the rows
+  // above: one line with the disclosure and the link. It stays so once it has
+  // (the text coming back would overflow again), but never because of the room
+  // the full text itself took when it was asked for.
+  const [brief, setBrief] = useState(false);
+  useEffect(() => {
+    if (overflows && !open) setBrief(true);
+    // Only when the overflow begins: `open` is read as it was then.
+  }, [overflows]);
   // The full text is for the first visit: once it has been shown, every state
   // gets the summary. undefined = not read yet, which shows the full text.
   // Read once, so the text never shrinks under the reader on the visit that records it.
@@ -396,7 +456,7 @@ function PrivacyNote({
     );
   }, []);
   const summary = saved || seen === true;
-  const full = !summary || open;
+  const full = open || (!summary && !brief);
   useEffect(() => {
     if (!full || seen !== false) return;
     // Shown, not flashed: a saved page has the full text only until its check answers.
@@ -409,22 +469,22 @@ function PrivacyNote({
   const link = `rounded underline underline-offset-2 hover:text-neutral-700 dark:hover:text-neutral-300 ${RING}`;
   return (
     <p className={`text-xs ${MUTED}`}>
-      {!full ? (
-        <>
-          While signed in, the page you&apos;re viewing is checked against your library and Site security.
-          {/* The Short link button beside it can store the address without one. */}
-          {!saved && " A bookmark is added only when you save the page."}
-        </>
-      ) : (
+      {full ? (
         <>
           While signed in, the address of each page you view is checked against
           your library for the saved badge, and its site against Site security
           when this popup opens.
           {!saved && " A bookmark is added only when you save the page."}
-          {shortLinks && " A short link stores this address."}
+          {shortLinks && " A short link stores this address."}{" "}
         </>
-      )}{" "}
-      {summary && (
+      ) : brief ? null : (
+        <>
+          While signed in, the page you&apos;re viewing is checked against your library and Site security.
+          {/* The Short link button beside it can store the address without one. */}
+          {!saved && " A bookmark is added only when you save the page."}{" "}
+        </>
+      )}
+      {(summary || brief) && (
         <>
           <button
             type="button"
@@ -434,7 +494,8 @@ function PrivacyNote({
             className={`-my-1 inline-flex min-h-6 items-center ${link}`}
           >
             {open ? "Less" : "More"}
-            <span className="sr-only"> about what is checked</span>
+            {/* Alone on the line, the button says what it is about in full. */}
+            <span className={brief && !open ? "" : "sr-only"}> about what is checked</span>
           </button>
           <span aria-hidden="true"> · </span>
         </>

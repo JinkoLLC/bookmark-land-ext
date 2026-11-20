@@ -1,5 +1,5 @@
 import type { ComponentProps } from "react";
-import { CircleAlert, CircleCheck, CirclePause } from "lucide-react";
+import { CircleAlert, CircleCheck, CirclePause, Link } from "lucide-react";
 
 /**
  * An outcome as a coloured icon beside neutral text, so colour is never the
@@ -11,8 +11,11 @@ export function StatusLine({
   className = "",
   children,
   ...rest
-}: { tone: "ok" | "error" | "paused" } & ComponentProps<"p">) {
-  const Icon = tone === "ok" ? CircleCheck : tone === "paused" ? CirclePause : CircleAlert;
+}: {
+  /** "link": a short link that was already there, which is no success of this visit. */
+  tone: "ok" | "error" | "paused" | "link";
+} & ComponentProps<"p">) {
+  const Icon = tone === "ok" ? CircleCheck : tone === "paused" ? CirclePause : tone === "link" ? Link : CircleAlert;
   return (
     <p
       // Not a control: it may take focus after a state change, but shows no ring.
@@ -21,7 +24,7 @@ export function StatusLine({
     >
       <Icon
         aria-hidden="true"
-        className={`mt-0.5 h-4 w-4 shrink-0 ${tone === "ok" ? "text-primary" : tone === "paused" ? "text-neutral-500 dark:text-neutral-400" : "text-red-600 dark:text-red-400"}`}
+        className={`mt-0.5 h-4 w-4 shrink-0 ${tone === "ok" ? "text-primary" : tone === "paused" || tone === "link" ? "text-neutral-500 dark:text-neutral-400" : "text-red-600 dark:text-red-400"}`}
       />
       <span className="min-w-0">{children}</span>
     </p>

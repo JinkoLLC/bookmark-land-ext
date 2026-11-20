@@ -149,9 +149,10 @@ describe("limitReached", () => {
     expect(limitReached({ ...EDU, held: 26 }, "en-US")?.sentences).toEqual([
       "The Education plan holds up to 25 short links at a time, and you have more than 25. Delete some to get to 24 or fewer.",
     ]);
-    expect(limitReached({ ...EDU, tier: "free", held: 26, created: 25 }, "en-US")?.sentences[1]).toBe(
-      "After that you'd also need to delete some: the Free plan holds up to 25 at a time.",
-    );
+    // The sentence carries the count, so the view adds no "More than 25 in use" under it.
+    const both = limitReached({ ...EDU, tier: "free", held: 26, created: 25 }, "en-US")!;
+    expect(both.sentences[1]).toBe("After that you'd also need to delete some: you have more than the 25 the Free plan holds.");
+    expect(both.heldUnsaid).toBe(false);
   });
 });
 
@@ -239,6 +240,12 @@ describe("deriveShortLinkView, one state at a time", () => {
     expect(deriveShortLinkView({ ...base, address: "http://localhost:3000/", usage: undefined, list: undefined, session: NEW_SESSION })).toEqual({
       kind: "refused",
       sentence: "This address can't be shortened.",
+      local: true,
+    });
+    // Refused for another reason (a short link of ours): nothing about needing a public address.
+    expect(deriveShortLinkView({ ...base, address: "https://bkmk.to/k7m2qx", usage: undefined, list: undefined, session: NEW_SESSION })).toMatchObject({
+      kind: "refused",
+      local: false,
     });
   });
 
@@ -295,8 +302,8 @@ const opened = (at: number | null) => (session: ShortLinkSession) => recordRead(
 const fail = (session: ShortLinkSession) => failed(session, null);
 const copy = (what: "link" | "tracked-image" | "image", url: string) => (session: ShortLinkSession) => copied(session, { what, url });
 const K7 = "https://bkmk.to/k7m2qx";
-const LINK_LINE = "The short link is on your clipboard.";
-const IMAGE_LINE = "The QR image is on your clipboard.";
+const LINK_LINE = "Short link copied.";
+const IMAGE_LINE = "QR image copied.";
 const newRow = link({ shortUrl: NEW });
 const usedUp = { ...PRO, created: 50 };
 

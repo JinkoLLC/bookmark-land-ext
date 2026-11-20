@@ -8,13 +8,16 @@ import {
   filterPickerRows,
   inputAfterTagSaved,
   livePageCounts,
+  ON_PUBLIC_PAGE,
   pageFeedNote,
   pickerRows,
   suggestTags,
   type CollectionFeed,
   type PickerRow,
 } from "@/utils/organize";
+import { isComposing } from "@/utils/composing";
 import { moveIndex } from "@/utils/list-keys";
+import { endOnWholeRow } from "@/utils/whole-row";
 import { MORE_BELOW, useScrollMore } from "@/hooks/use-scroll-more";
 import { CollectionGlyph } from "@/components/collection-glyph";
 import { StatusLine } from "@/components/status-line";
@@ -139,14 +142,8 @@ function CollectionPicker({
   // The list ends on a whole row: one cut mid-line under the fade reads as broken text.
   useLayoutEffect(() => {
     const box = list.element;
-    if (!box) return;
-    box.style.maxHeight = "";
-    if (box.scrollHeight <= box.clientHeight) return;
-    const { top, bottom } = box.getBoundingClientRect();
-    const padding = parseFloat(getComputedStyle(box).paddingBottom);
-    // The last row that fits whole, with the list's padding under it: the fade lies over that, not over text.
-    const ends = [...box.children].map((row) => row.getBoundingClientRect().bottom + padding).filter((end) => end <= bottom + 0.5);
-    if (ends.length > 0) box.style.maxHeight = `${ends[ends.length - 1] - top}px`;
+    // With the list's padding under the last whole row: the fade lies over that, not over text.
+    if (box) endOnWholeRow(box, box.children, parseFloat(getComputedStyle(box).paddingBottom));
   }, [list.element, filter, collections, feedsState]);
 
   const all = pickerRows(collections ?? []);
@@ -215,6 +212,8 @@ function CollectionPicker({
   };
 
   const onFieldKey = (event: React.KeyboardEvent) => {
+    // A key the input method takes (Enter accepting a candidate above all) never chooses a row: a choice can make the bookmark public.
+    if (isComposing(event.nativeEvent)) return;
     if (event.key === "Escape") {
       event.preventDefault();
       event.stopPropagation();
@@ -244,9 +243,9 @@ function CollectionPicker({
           className={`flex min-w-0 flex-1 items-center gap-2 px-2 py-[7px] text-left disabled:opacity-50 ${OUTLINE}`}
         >
           <CollectionGlyph icon={selected.icon} color={selected.color} />
-          {/* The name is read from the content, so it starts with what is shown. */}
+          {/* The name is read from the content, so it starts with what is shown. The marker is set smaller, which leaves the name its room. */}
           <span className="min-w-0 truncate">{selected.name}</span>
-          {onPage(selected) && <span className="shrink-0 text-neutral-600 dark:text-neutral-400"> · on a page</span>}
+          {onPage(selected) && <span className="shrink-0 text-xs text-neutral-600 dark:text-neutral-400">{ON_PUBLIC_PAGE}</span>}
           <span className="sr-only">, collection</span>
           <ChevronDown
             className={`ml-auto h-4 w-4 shrink-0 opacity-60 motion-safe:transition-transform ${open ? "rotate-180" : ""}`}
@@ -322,7 +321,8 @@ function CollectionPicker({
             tabIndex={-1}
             // Keeps focus in the filter field when a row is clicked.
             onMouseDown={(event) => event.preventDefault()}
-            className={`min-h-0 overflow-y-auto ${rows.length === 0 ? "" : "border-t border-neutral-200 p-1 dark:border-neutral-800"} ${list.more ? MORE_BELOW : ""}`}
+            // A box of its own inside the panel: the fade at its lower edge ends on its hairline, clear of the panel's border.
+            className={`min-h-0 overflow-y-auto ${rows.length === 0 ? "" : "mx-1 mb-1 rounded border border-neutral-200 p-1 dark:border-neutral-800"} ${list.more ? MORE_BELOW : ""}`}
           >
             {rows.map((row, i) => (
               <div
@@ -344,10 +344,10 @@ function CollectionPicker({
               >
                 <CollectionGlyph icon={row.icon} color={row.color} className="mt-[3px] h-3.5 w-3.5" />
                 <span className="min-w-0 flex-1">
-                  <span className="flex gap-1">
+                  <span className="flex items-baseline gap-1">
                     {/* Two lines for the name itself, so it isn't cut while its path below wraps. */}
                     <span className={`line-clamp-2 min-w-0 break-words ${row.id === selected.id ? "font-medium" : ""}`}>{row.name}</span>
-                    {onPage(row) && <span className="shrink-0 text-neutral-600 dark:text-neutral-400"> · on a page</span>}
+                    {onPage(row) && <span className="shrink-0 text-xs text-neutral-600 dark:text-neutral-400">{ON_PUBLIC_PAGE}</span>}
                   </span>
                   {/* Wraps: same-named collections differ at the end of their path. */}
                   {row.path && <span className="block break-words text-xs text-neutral-600 dark:text-neutral-400"> {row.path}</span>}
@@ -481,8 +481,8 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
             setError(null);
           }}
           onKeyDown={(e) => {
-            // Enter that confirms an input method's text isn't a submission (229: browsers that report it only so).
-            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
+            // Enter that confirms an input method's text isn't a submission.
+            if (e.key === "Enter" && !isComposing(e.nativeEvent)) {
               e.preventDefault();
               void add(input);
             }

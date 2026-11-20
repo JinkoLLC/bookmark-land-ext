@@ -19,10 +19,12 @@ export function PanelDivider({
   treeRef,
   listRef,
   onResize,
+  showButtons,
 }: {
   treeRef: RefObject<HTMLElement | null>;
   listRef: RefObject<HTMLElement | null>;
   onResize: (height: number) => void;
+  showButtons: boolean;
 }) {
   const drag = useRef<{ startY: number; treeStart: number; listStart: number } | null>(null);
   const lastHeight = useRef<number | null>(null);
@@ -122,28 +124,30 @@ export function PanelDivider({
       />
       {/* One pill for the pair, seated on the line: the line has the border's colour and runs on past it.
           The border is drawn over the buttons, so they stay 24 px inside the 24 px row. */}
-      <div className="absolute right-6 top-1/2 flex -translate-y-1/2 rounded-full bg-white after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:border after:border-neutral-300 dark:bg-neutral-900 dark:after:border-neutral-700">
-        <button
-          type="button"
-          aria-label="Show more collections"
-          title="Show more collections"
-          disabled={value.now >= value.max}
-          onClick={() => step(RESIZE_STEP)}
-          className={STEP_BUTTON}
-        >
-          <ChevronDown className="h-4 w-4" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          aria-label="Show fewer collections"
-          title="Show fewer collections"
-          disabled={value.now <= value.min}
-          onClick={() => step(-RESIZE_STEP)}
-          className={STEP_BUTTON}
-        >
-          <ChevronUp className="h-4 w-4" aria-hidden="true" />
-        </button>
-      </div>
+      {showButtons && (
+        <div className="absolute right-6 top-1/2 flex -translate-y-1/2 rounded-full bg-white after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:border after:border-neutral-300 dark:bg-neutral-900 dark:after:border-neutral-700">
+          <button
+            type="button"
+            aria-label="Show more collections"
+            title="Show more collections"
+            disabled={value.now >= value.max}
+            onClick={() => step(RESIZE_STEP)}
+            className={STEP_BUTTON}
+          >
+            <ChevronDown className="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-label="Show fewer collections"
+            title="Show fewer collections"
+            disabled={value.now <= value.min}
+            onClick={() => step(-RESIZE_STEP)}
+            className={STEP_BUTTON}
+          >
+            <ChevronUp className="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      )}
     </div>
   );
 }

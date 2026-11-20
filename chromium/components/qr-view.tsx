@@ -89,6 +89,7 @@ export function PageAddress({
 }) {
   const text = useRef<HTMLParagraphElement>(null);
   const toggle = useRef<HTMLButtonElement>(null);
+  const hide = useRef<HTMLButtonElement>(null);
   const [long, setLong] = useState(false);
   const [open, setOpen] = useState(false);
   useLayoutEffect(() => {
@@ -96,11 +97,16 @@ export function PageAddress({
     // Measured while held to six lines: is anything cut off?
     if (element && !open) setLong(element.scrollHeight > element.clientHeight + 1);
   }, [address, open]);
+  // Opened from the control under the address, which is then hidden from assistive technology: focus moves to the one above.
+  useEffect(() => {
+    if (open && document.activeElement === toggle.current) hide.current?.focus();
+  }, [open]);
   return (
     <div className="min-w-0">
-      {/* A long address pushes the control under it out of sight: once open there is one above it too, and that one is the Tab stop. */}
+      {/* A long address pushes the control under it out of sight: once open there is one above it too, and that one is the only one a keyboard or screen reader meets. */}
       {long && open && (
         <button
+          ref={hide}
           type="button"
           aria-expanded
           onClick={() => {
@@ -127,6 +133,8 @@ export function PageAddress({
           ref={toggle}
           type="button"
           aria-expanded={open}
+          // While open this is the second "Hide full address": kept for the pointer at the end of a long address, and for nothing else.
+          aria-hidden={open || undefined}
           tabIndex={open ? -1 : undefined}
           onClick={() => setOpen(!open)}
           className={`block min-h-6 text-xs ${TEXT_LINK}`}
@@ -160,10 +168,13 @@ export function QrExports({
   stacked = false,
   copyState,
   onCopied,
+  fromFile = false,
 }: {
   svg: string;
   fileName: string;
   stacked?: boolean;
+  /** The code is to be scanned from the PNG or a print (it is dense): Download PNG is the filled button, at the top. */
+  fromFile?: boolean;
   /** The copy's outcome when the owner holds it, and announces "copied" itself, beside another Copy. */
   copyState?: readonly [CopyState, (state: CopyState) => void];
   /** The image reached the clipboard. */
@@ -201,27 +212,35 @@ export function QrExports({
   const height = stacked ? "py-1.5" : "py-2";
   const failed = png === "failed";
 
+  const copyButton = (
+    <button
+      type="button"
+      // Without a PNG neither button can work, and the line below says so.
+      disabled={failed}
+      onClick={copyImage}
+      className={`flex-1 ${failed ? `${UNAVAILABLE} ${height}` : stacked || fromFile ? `${OUTLINE} ${height}` : FILLED}`}
+    >
+      {copy === "copied" ? "Copied" : "Copy image"}
+    </button>
+  );
+  const pngButton = (
+    <button
+      type="button"
+      disabled={failed}
+      // A failure here is the same one the drawing above reports.
+      onClick={() => void drawn().then((blob) => download(blob, `${fileName}.png`), () => {})}
+      className={`flex-1 ${failed ? `${UNAVAILABLE} ${height}` : fromFile ? FILLED : `${OUTLINE} ${height}`}`}
+    >
+      Download PNG
+    </button>
+  );
+
   return (
     <div className={`flex min-w-0 flex-col gap-2 ${stacked ? "flex-1" : ""}`}>
-      <button
-        type="button"
-        // Without a PNG neither button can work, and the line below says so.
-        disabled={failed}
-        onClick={copyImage}
-        className={failed ? `${UNAVAILABLE} ${height}` : stacked ? `${OUTLINE} ${height}` : FILLED}
-      >
-        {copy === "copied" ? "Copied" : "Copy image"}
-      </button>
+      {/* The button to reach for first has the top row to itself. */}
+      {fromFile ? pngButton : copyButton}
       <div className={`flex gap-2 ${stacked ? "flex-col" : ""}`}>
-        <button
-          type="button"
-          disabled={failed}
-          // A failure here is the same one the drawing above reports.
-          onClick={() => void drawn().then((blob) => download(blob, `${fileName}.png`), () => {})}
-          className={`flex-1 ${failed ? UNAVAILABLE : OUTLINE} ${height}`}
-        >
-          Download PNG
-        </button>
+        {fromFile ? copyButton : pngButton}
         <button
           type="button"
           onClick={() => download(new Blob([svg], { type: "image/svg+xml" }), `${fileName}.svg`)}
@@ -309,7 +328,7 @@ export function QrView({
                   {shortLink() ? <>, or {shortLink("use a short link")}.</> : "."}
                 </p>
               )}
-              <QrExports svg={svg} fileName={`qr-${extractDomain(url)}`} onCopied={() => onCopied?.("image")} />
+              <QrExports svg={svg} fileName={`qr-${extractDomain(url)}`} onCopied={() => onCopied?.("image")} fromFile={dense} />
               <p className={`text-xs ${MUTED}`}>
                 Made in your browser. It isn&apos;t tracked and can&apos;t be changed after printing.
                 {!dense && shortLink() && <> Want scans counted? {shortLink()}</>}

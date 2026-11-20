@@ -22,16 +22,16 @@ describe("a collection that a live page shows", () => {
   it("is labeled in the popup, with what becomes public", () => {
     bookmarkCollection = "shown";
     const html = renderToStaticMarkup(<OrganizeSection bookmarkId={"b" as never} />);
-    expect(html).toContain("· on a page");
+    expect(html).toContain("· on a public page");
     // The picker's name is read from its content: what is shown, then what it is.
-    expect(html).toMatch(/aria-haspopup="listbox"[^>]*>.*Reading<\/span>.*· on a page<\/span><span class="sr-only">, collection</);
+    expect(html).toMatch(/aria-haspopup="listbox"[^>]*>.*Reading<\/span>.*· on a public page<\/span><span class="sr-only">, collection</);
     expect(html).toContain("This bookmark appears on 1 live page: its title, site and link.");
   });
 
   it("leaves other collections alone", () => {
     bookmarkCollection = "private";
     const html = renderToStaticMarkup(<OrganizeSection bookmarkId={"b" as never} />);
-    expect(html).not.toContain("on a page");
+    expect(html).not.toContain("on a public page");
     expect(html).not.toContain("live page");
   });
 
@@ -47,8 +47,8 @@ describe("a collection that a live page shows", () => {
     );
     // The default destination shows the name it was given.
     expect(html).toContain("Imported Nov 1, 2026, 3:42 PM");
-    expect(html).toContain("Reading · on a page");
-    expect(html).not.toContain("Notes · on a page");
+    expect(html).toContain("Reading · on a public page");
+    expect(html).not.toContain("Notes · on a public page");
     expect(html).toContain("Bookmarks imported into this collection appear on 1 live page");
     // The status is there before it has anything to say.
     expect(html).toContain('<div role="status" class="min-w-0"></div>');
