@@ -26,6 +26,10 @@ _Avoid_: Label, keyword
 A saved set of rules that matches bookmarks; it holds no bookmarks of its own.
 _Avoid_: Saved search, filter, view
 
+**Page**:
+A public page of links that a user publishes from bookmark.land. A page can show a Collection, which makes the bookmarks saved there public.
+_Avoid_: Profile, site, link list
+
 ### Removal
 
 **Trash**:

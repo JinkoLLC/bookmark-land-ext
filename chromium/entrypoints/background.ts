@@ -303,7 +303,8 @@ export default defineBackground(() => {
       !isAccountAuthCookie(
         cookie,
         import.meta.env.WXT_CLERK_FRONTEND_API,
-        import.meta.env.WXT_CLERK_SYNC_HOST,
+        // Web app, not sync host: its __session cookie still marks account changes.
+        import.meta.env.WXT_WEB_APP_URL,
       )
     ) {
       return;

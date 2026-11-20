@@ -1,10 +1,12 @@
 # bookmark.land browser extensions
 
-The official browser extensions for [bookmark.land](https://bookmark.land): save the page you're reading with one click, and browse your library from the browser.
+The official browser extensions for [bookmark.land](https://bookmark.land), a bookmark manager with nested collections, tags, search and broken-link checks. Save the page you're reading with one click, and browse your library from the browser.
+
+[Install from the Chrome Web Store](https://chromewebstore.google.com/detail/bookmarkland/bogdilfnhofbdehjcbnchmjbbmlcgooc) · [What the extension does](https://bookmark.land/extension)
 
 | Directory | Browsers | Status |
 | --- | --- | --- |
-| [`chromium/`](chromium/README.md) | Chrome, Edge, Brave and other Chromium browsers at version 114 or later | Coming to the Chrome Web Store |
+| [`chromium/`](chromium/README.md) | Chrome, Edge, Brave and other Chromium browsers at version 114 or later | [On the Chrome Web Store](https://chromewebstore.google.com/detail/bookmarkland/bogdilfnhofbdehjcbnchmjbbmlcgooc) |
 
 Each extension is its own package. New browsers get their own directory at the root.
 

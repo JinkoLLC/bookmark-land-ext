@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCollectionOptions, suggestTags } from "./organize";
+import { buildCollectionOptions, livePageCounts, pageFeedNote, suggestTags } from "./organize";
 
 describe("buildCollectionOptions", () => {
   const c = (
@@ -76,5 +76,26 @@ describe("buildCollectionOptions icon passthrough", () => {
       { _id: "x", name: "Dev", order: 0, icon: "🚀", color: "#f00" },
     ]);
     expect(options[0]).toMatchObject({ icon: "🚀", color: "#f00" });
+  });
+});
+
+describe("collections shown on live pages", () => {
+  const counts = livePageCounts([
+    { collectionId: "a", pages: [{}] },
+    { collectionId: "b", pages: [{}, {}] },
+  ]);
+
+  it("counts the live pages of each collection, and none while loading", () => {
+    expect([...counts]).toEqual([["a", 1], ["b", 2]]);
+    expect(livePageCounts(undefined).size).toBe(0);
+  });
+
+  it("warns for a bookmark or an import, and stays quiet otherwise", () => {
+    expect(pageFeedNote(counts.get("a"), "bookmark")).toBe("This bookmark appears on 1 live page: its title, site and link.");
+    expect(pageFeedNote(counts.get("b"), "import")).toBe(
+      "Bookmarks imported into this collection appear on 2 live pages: each title, site and link.",
+    );
+    expect(pageFeedNote(counts.get("c"), "bookmark")).toBeUndefined();
+    expect(pageFeedNote(counts.get(""), "import")).toBeUndefined();
   });
 });

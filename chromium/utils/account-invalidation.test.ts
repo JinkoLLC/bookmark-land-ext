@@ -58,7 +58,9 @@ describe("background worker", () => {
     fake.cookieListeners.length = 0;
     fake.messageListeners.length = 0;
     vi.stubEnv("WXT_CLERK_FRONTEND_API", "https://clerk.example.test");
-    vi.stubEnv("WXT_CLERK_SYNC_HOST", "https://app.example.test");
+    // Production shape: Clerk session synced from the Frontend API, web app elsewhere.
+    vi.stubEnv("WXT_CLERK_SYNC_HOST", "https://clerk.example.test");
+    vi.stubEnv("WXT_WEB_APP_URL", "https://app.example.test");
     vi.stubEnv("WXT_CONVEX_URL", "https://convex.example.test");
     vi.stubGlobal("fetch", vi.fn(async () => new Response("{}", { status: 401 })));
     vi.stubGlobal("defineBackground", (main: () => void) => main());
