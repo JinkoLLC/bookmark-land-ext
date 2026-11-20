@@ -79,18 +79,20 @@ export function useShortLink(
   bookmarkId: string | null | undefined,
 ): ShortLinkModel {
   const [wanted, setWanted] = useState(false);
-  // Dropping both subscriptions for one render makes the server answer afresh.
-  const [dropped, setDropped] = useState(false);
+  // Dropping a subscription for one render makes the server answer afresh. A
+  // loaded allowance stays (it is live anyway), so what the view says about a
+  // limit holds through "Check again"; only one that failed is asked for again.
+  const [dropped, setDropped] = useState<null | "list" | "all">(null);
   useEffect(() => {
-    if (dropped) setDropped(false);
+    if (dropped) setDropped(null);
   }, [dropped]);
   const queries = useMemo(
     () =>
-      dropped
+      dropped === "all"
         ? {}
         : {
             usage: { query: api.shortLinks.usage, args: {} },
-            ...(wanted && { list: { query: api.shortLinks.list, args: {} } }),
+            ...(wanted && !dropped && { list: { query: api.shortLinks.list, args: {} } }),
           },
     [dropped, wanted],
   );
@@ -188,7 +190,7 @@ export function useShortLink(
     lastCopied: session.copied,
     setLastCopied: (copied) => setSession((now) => shortLinkSession.copied(now, copied)),
     reload: () => {
-      setDropped(true);
+      setDropped(usage instanceof Error ? "all" : "list");
       if (accountId === null) {
         setAccountId(undefined);
         setAsked((n) => n + 1);
@@ -252,7 +254,8 @@ function LinkBlock({
       ref={copyButton}
       type="button"
       onClick={() => void copyText(view.shortUrl).then((ok) => latest("link", setLink, setImage)(ok ? "copied" : "failed"))}
-      className={`shrink-0 ${FILLED}`}
+      // Already on the clipboard: Copy is no longer the next thing to do. The clear border keeps its size.
+      className={`shrink-0 ${clipboard && last?.what === "link" ? OUTLINE : `border border-transparent ${FILLED}`}`}
     >
       {link === "copied" ? "Copied" : "Copy"}
     </button>
@@ -294,8 +297,8 @@ function LinkBlock({
           {copy}
         </div>
       ) : (
-        // A paused or blocked short link wouldn't open, so there is nothing to hand on: plain text, the field's size without its border.
-        <p className="rounded-md border border-transparent bg-neutral-100 px-2 py-2 [overflow-wrap:anywhere] dark:bg-neutral-800">
+        // A paused or blocked short link wouldn't open, so there is nothing to hand on: plain text, nothing that looks like a field.
+        <p className="[overflow-wrap:anywhere]">
           <span className="sr-only">Short link: </span>
           {view.shortUrl}
         </p>
@@ -355,7 +358,8 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
   // After a creation, focus goes to Copy. Any other change that removed the
   // focused control sends focus to the view's start instead of to <body>.
   // A short link's state counts as a change: one that gets paused loses its Copy.
-  const outcome = view.kind === "link" ? `${view.outcome} ${view.state}` : view.kind;
+  // So does another short link taking its place: its block is a new one (see the key below).
+  const outcome = view.kind === "link" ? `${view.outcome} ${view.state} ${view.shortUrl}` : view.kind;
   const wasDeleted = (view.kind === "create" || view.kind === "limit") && view.deleted;
   const shown = useRef(outcome);
   useEffect(() => {
@@ -379,6 +383,26 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
   const allowance = usage && <p className={`text-xs ${MUTED}`}>{allowanceLine(usage, view.kind === "create")}</p>;
 
   const limit = usage && limitReached(usage);
+  /** Why nothing can be created, and the way out of it. `upgrade`: the Upgrade button's style. */
+  const limits = (upgrade: string) =>
+    limit && (
+      <>
+        {limit.sentences.map((sentence) => (
+          <p key={sentence}>{sentence}</p>
+        ))}
+        {limit.upgrade && (
+          <button type="button" onClick={openUpgrade} className={upgrade}>
+            Upgrade
+          </button>
+        )}
+        {limit.manage && (
+          <p className="text-xs">
+            <ManageLink />
+          </p>
+        )}
+        {limit.heldUnsaid && allowance}
+      </>
+    );
   // Deleting is done on the website, so the line comes with the way there (once, where the limit names it too).
   const deleted = wasDeleted && (
     <>
@@ -442,7 +466,8 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
   } else if (view.kind === "link") {
     content = (
       <>
-        <LinkBlock view={view} copyButton={copyButton} last={model.lastCopied} setLast={model.setLastCopied} />
+        {/* Keyed: a "Copied" still showing belongs to the short link it was clicked for, never to one that replaces it. */}
+        <LinkBlock key={view.shortUrl} view={view} copyButton={copyButton} last={model.lastCopied} setLast={model.setLastCopied} />
         {allowance}
       </>
     );
@@ -464,23 +489,18 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
         <p id="checking-note" role="status" className="sr-only">
           {view.checking && "Checking your short links…"}
         </p>
-        {/* Only leaves this view: nothing is created by this click, and every rule of an ordinary Create applies after it. */}
-        <button type="button" aria-describedby="start-over-note" onClick={startOver} className={OUTLINE}>
-          Create a new short link
-        </button>
-        <p id="start-over-note" className={`text-xs ${MUTED}`}>
-          If the first one was created, creating again uses a second short link.
-        </p>
-        {view.limit && (
+        {view.limit ? (
+          // Nothing can be created now, so creating again isn't offered. Check again stays the filled button.
+          limits(OUTLINE)
+        ) : (
           <>
-            {limit?.sentences.map((sentence) => <p key={sentence}>{sentence}</p>)}
-            {limit?.manage && (
-              <p className="text-xs">
-                <ManageLink />
-              </p>
-            )}
-            {/* A used-up month is in the sentence already; the count held is not. */}
-            {limit?.manage && allowance}
+            {/* Only leaves this view: nothing is created by this click, and every rule of an ordinary Create applies after it. */}
+            <button type="button" aria-describedby="start-over-note" onClick={startOver} className={OUTLINE}>
+              Create a new short link
+            </button>
+            <p id="start-over-note" className={`text-xs ${MUTED}`}>
+              If the first one was created, creating again uses a second short link.
+            </p>
           </>
         )}
       </>
@@ -490,19 +510,8 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
       <>
         {page}
         {deleted}
-        {limit?.sentences.map((sentence) => <p key={sentence}>{sentence}</p>)}
-        {limit?.upgrade && (
-          // The only way forward here, so it is the filled button.
-          <button type="button" onClick={openUpgrade} className={FILLED}>
-            Upgrade
-          </button>
-        )}
-        {limit?.manage && (
-          <p className="text-xs">
-            <ManageLink />
-          </p>
-        )}
-        {limit?.manage && allowance}
+        {/* Upgrade is the only way forward here, so it is the filled button. */}
+        {limits(FILLED)}
       </>
     );
   } else {
@@ -514,7 +523,7 @@ export function ShortLinkView({ tab, model, onBack }: { tab: PageTab; model: Sho
         {view.failed && (
           <StatusLine tone="error" role="alert" className="font-medium">
             {/* With an earlier attempt unanswered, "nothing was used" can't be promised. */}
-            Couldn&apos;t create the short link. {view.unresolved ? "This attempt failed." : "Nothing was used. Try again."}
+            {view.unresolved ? "Couldn't create the short link this time." : "Couldn't create the short link. Nothing was used. Try again."}
           </StatusLine>
         )}
         {view.truncated && (

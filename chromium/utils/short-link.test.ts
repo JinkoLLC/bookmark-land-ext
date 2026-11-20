@@ -124,6 +124,7 @@ describe("limitReached", () => {
       sentences: ["You've used this month's 50 short links. You can make more on Dec 1."],
       upgrade: false,
       manage: false,
+      heldUnsaid: false,
     });
     expect(limitReached({ ...EDU, created: 25 }, "en-US")?.upgrade).toBe(true);
   });
@@ -133,6 +134,7 @@ describe("limitReached", () => {
       sentences: ["You have 25 short links, and the Education plan holds up to 25 at a time. Delete one to make room."],
       upgrade: false,
       manage: true,
+      heldUnsaid: false,
     });
     const both = limitReached({ ...EDU, tier: "free", held: 25, created: 25 }, "en-US")!;
     expect(both.sentences).toEqual([
@@ -140,7 +142,7 @@ describe("limitReached", () => {
       // Deleting wouldn't help this month, so it isn't asked for as the next step.
       "After that you'd also need to delete one: the Free plan holds up to 25 at a time.",
     ]);
-    expect(both).toMatchObject({ upgrade: true, manage: true });
+    expect(both).toMatchObject({ upgrade: true, manage: true, heldUnsaid: true });
   });
 
   it("asks for more than one deletion above the cap, where the exact count isn't known", () => {
@@ -359,9 +361,12 @@ const WALKS: Record<string, Step[]> = {
   "an unfinished creation, a new one that fails twice, then one that works": [
     ["the view opens on a record", opened(5), { kind: "unfinished", at: 5, checking: true }],
     ["the list has no match", { list: complete() }, { kind: "unfinished", checking: false, limit: false }],
+    // `limit`: the view shows the limit in place of "Create a new short link", through a Check again too.
     ["the month is used up", { usage: usedUp }, { kind: "unfinished", limit: true }],
-    ["Check again: the list loads", { list: undefined, usage: PRO }, { kind: "unfinished", checking: true }],
-    ["still no match", { list: complete() }, { kind: "unfinished", checking: false }],
+    ["Check again: the list loads", { list: undefined }, { kind: "unfinished", checking: true, limit: true }],
+    ["still no match", { list: complete() }, { kind: "unfinished", checking: false, limit: true }],
+    ["a new month, at the cap on short links held", { usage: { ...EDU, held: 25 } }, { kind: "unfinished", limit: true }],
+    ["one is deleted: creating is offered again", { usage: PRO }, { kind: "unfinished", checking: false, limit: false }],
     ["Create a new short link", startOver, { kind: "create", wait: null, unresolved: true, failed: false }],
     ["Create", creating, { kind: "create", wait: "creating", unresolved: true }],
     ["it fails", fail, { kind: "create", wait: null, failed: true, unresolved: true }],

@@ -66,7 +66,8 @@ export function QrImage({
       alt={label}
       width={size}
       height={size}
-      className="shrink-0 rounded"
+      // A hairline around it in light, where the code's white is the popup's own; drawn outside, so the code keeps its size.
+      className="shrink-0 rounded ring-1 ring-neutral-300 dark:ring-0"
     />
   );
 }

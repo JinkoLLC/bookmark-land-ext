@@ -430,8 +430,8 @@ function PrivacyNote({
             type="button"
             aria-expanded={open}
             onClick={() => setOpen(!open)}
-            // In running text: the target reaches 24 px without making the line taller.
-            className={`relative after:absolute after:inset-x-0 after:-inset-y-1 ${link}`}
+            // In running text: 24 px tall, and the margins keep the line from growing with it.
+            className={`-my-1 inline-flex min-h-6 items-center ${link}`}
           >
             {open ? "Less" : "More"}
             <span className="sr-only"> about what is checked</span>

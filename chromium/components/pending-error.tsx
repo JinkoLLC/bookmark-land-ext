@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "@convex/api";
 import { browser } from "wxt/browser";
+import { PageAddress } from "@/components/qr-view";
 import { openUpgrade } from "@/components/quick-save";
 import { StatusLine } from "@/components/status-line";
 import { REFRESH_BADGE_MESSAGE } from "@/utils/messages";
@@ -95,9 +96,7 @@ export function PendingErrorBanner() {
             ? `A right-click save failed. ${limitSentence(pending.limit)}`
             : "A save from the right-click menu failed."}
         </StatusLine>
-        <p className="truncate text-xs text-neutral-500 dark:text-neutral-400" title={pending.url}>
-          {pending.url}
-        </p>
+        <PageAddress text={pending.url} className="text-neutral-500 dark:text-neutral-400" />
         {retryFailed && (
           <StatusLine tone="error" role="alert" className="text-xs">
             Retry failed. Still can&apos;t save.

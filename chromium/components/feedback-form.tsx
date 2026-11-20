@@ -43,6 +43,12 @@ export function FeedbackForm({ onBack }: { onBack: () => void }) {
   const [state, setState] = useState<SubmitState>("idle");
 
   const canSubmit = state !== "pending" && message.trim().length > 0 && acknowledged;
+  /** What Send still needs, for the line under it. */
+  const missing = message.trim()
+    ? !acknowledged && "Tick the box above to send."
+    : acknowledged
+      ? "Enter a message to send."
+      : "Enter a message and tick the box to send.";
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -147,15 +153,15 @@ export function FeedbackForm({ onBack }: { onBack: () => void }) {
       <button
         type="submit"
         disabled={!canSubmit}
-        aria-describedby={acknowledged ? undefined : "feedback-missing"}
+        aria-describedby={missing ? "feedback-missing" : undefined}
         className="flex items-center justify-center gap-2 rounded-md bg-primary px-3 py-2 font-medium text-primary-foreground enabled:hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:bg-neutral-200 disabled:text-neutral-600 dark:disabled:bg-neutral-800 dark:disabled:text-neutral-400"
       >
         {state === "pending" && <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" />}
         {state === "pending" ? "Sending…" : "Send feedback"}
       </button>
-      {!acknowledged && (
+      {missing && (
         <p id="feedback-missing" className={`-mt-2 text-xs ${MUTED}`}>
-          Tick the box above to send.
+          {missing}
         </p>
       )}
     </form>

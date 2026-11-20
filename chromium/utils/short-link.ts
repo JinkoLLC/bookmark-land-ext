@@ -115,7 +115,7 @@ export function allowanceLine(usage: ShortLinkUsage, withPlan = false): string {
 export function limitReached(
   usage: ShortLinkUsage,
   locale?: string,
-): { sentences: string[]; upgrade: boolean; manage: boolean } | null {
+): { sentences: string[]; upgrade: boolean; manage: boolean; heldUnsaid: boolean } | null {
   const monthly = usage.created >= usage.monthly;
   const kept = usage.liveCap !== undefined && (usage.held ?? 0) >= usage.liveCap;
   if (!monthly && !kept) return null;
@@ -136,6 +136,8 @@ export function limitReached(
     ],
     upgrade: monthly && (usage.tier === "free" || usage.tier === "edu"),
     manage: kept,
+    // Only the sentence after a used-up month leaves out how many are held: the view adds that line.
+    heldUnsaid: kept && monthly,
   };
 }
 
@@ -317,7 +319,8 @@ export type ShortLinkView =
   /**
    * A creation was started and the popup closed before its answer. "Check
    * again" asks the server; "Create a new short link" goes on to the ordinary
-   * view, which keeps a warning. `limit`: the limit sentences are shown here too.
+   * view, which keeps a warning. `limit`: no short link can be created now, so
+   * the limit is shown in place of "Create a new short link".
    */
   | { kind: "unfinished"; at: number; checking: boolean; limit: boolean }
   /** The month's allowance or the cap on short links held at once is reached. `deleted`: as in "create". */
@@ -392,10 +395,10 @@ export function deriveShortLinkView(input: {
   }
   if (usage instanceof Error || list instanceof Error || input.accountId === null) return { kind: "failed" };
   // With an unanswered record, the view never falls back to a plain Create while the list loads.
-  if (unanswered && list === undefined) return { kind: "unfinished", at: record.at, checking: true, limit: false };
+  const limit = usage !== undefined && limitReached(usage) !== null;
+  if (unanswered && list === undefined) return { kind: "unfinished", at: record.at, checking: true, limit };
   if (usage === undefined || list === undefined || record === undefined) return { ...create, wait: "allowance" };
 
-  const limit = limitReached(usage) !== null;
   if (unanswered) return { kind: "unfinished", at: record.at, checking: false, limit };
   if (limit) return { kind: "limit", deleted: lost };
   return {

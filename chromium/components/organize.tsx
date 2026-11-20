@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { useMutation, useQueries, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
@@ -135,6 +135,19 @@ function CollectionPicker({
   const field = useRef<HTMLInputElement>(null);
   const listId = useId();
   const list = useScrollMore();
+  const feedsState = live.state;
+  // The list ends on a whole row: one cut mid-line under the fade reads as broken text.
+  useLayoutEffect(() => {
+    const box = list.element;
+    if (!box) return;
+    box.style.maxHeight = "";
+    if (box.scrollHeight <= box.clientHeight) return;
+    const { top, bottom } = box.getBoundingClientRect();
+    const padding = parseFloat(getComputedStyle(box).paddingBottom);
+    // The last row that fits whole, with the list's padding under it: the fade lies over that, not over text.
+    const ends = [...box.children].map((row) => row.getBoundingClientRect().bottom + padding).filter((end) => end <= bottom + 0.5);
+    if (ends.length > 0) box.style.maxHeight = `${ends[ends.length - 1] - top}px`;
+  }, [list.element, filter, collections, feedsState]);
 
   const all = pickerRows(collections ?? []);
   const rows = filterPickerRows(all, filter);
@@ -392,7 +405,8 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
   const removeTag = useMutation(api.bookmarkTags.removeTagFromBookmark);
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
-  const [removed, setRemoved] = useState("");
+  /** The latest tag added or removed, for the status region. */
+  const [changed, setChanged] = useState("");
   const chips = useRef<HTMLDivElement>(null);
   const field = useRef<HTMLInputElement>(null);
   /** Where the chip being removed sat: its neighbour takes the focus it had. */
@@ -418,9 +432,10 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
     const tagName = name.trim();
     if (!tagName) return;
     setError(null);
-    setRemoved("");
+    setChanged("");
     try {
       await addTag({ bookmarkId, tagName });
+      setChanged(`Added tag ${tagName}`);
       setInput((current) => inputAfterTagSaved(current, name));
     } catch (e) {
       setError(describe(e, "Couldn't add that tag."));
@@ -432,7 +447,7 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
     removedAt.current = index;
     try {
       await removeTag({ bookmarkId, tagId });
-      setRemoved(`Removed tag ${name}`);
+      setChanged(`Removed tag ${name}`);
     } catch (e) {
       removedAt.current = null;
       setError(describe(e, "Couldn't remove that tag."));
@@ -466,7 +481,8 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
             setError(null);
           }}
           onKeyDown={(e) => {
-            if (e.key === "Enter") {
+            // Enter that confirms an input method's text isn't a submission (229: browsers that report it only so).
+            if (e.key === "Enter" && !e.nativeEvent.isComposing && e.keyCode !== 229) {
               e.preventDefault();
               void add(input);
             }
@@ -482,9 +498,9 @@ function TagEditor({ bookmarkId }: { bookmarkId: Id<"bookmarks"> }) {
           ))}
         </datalist>
       </div>
-      {/* Always here, so a removal is announced as a change to it. */}
+      {/* Always here, so an added or removed tag is announced as a change to it. */}
       <p role="status" className="sr-only">
-        {removed}
+        {changed}
       </p>
       {error && (
         <StatusLine tone="error" role="alert">
