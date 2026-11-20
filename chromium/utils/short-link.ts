@@ -95,14 +95,18 @@ const count = (n: number) => n.toLocaleString();
 
 /**
  * "38 of 50 left this month · Pro plan". On a plan that caps the short links
- * held at once, that cap is named only when it is reached or one away:
- * "10 left this month · 24 of 25 in use".
+ * held at once, that cap is named one away from it ("10 left this month ·
+ * 24 of 25 in use") and alone once it is reached, when what is left of the
+ * month can't be used: "25 of 25 in use".
  */
 export function allowanceLine(usage: ShortLinkUsage, withPlan = false): string {
   const left = count(Math.max(0, usage.monthly - usage.created));
-  if (usage.liveCap !== undefined && (usage.held ?? 0) >= usage.liveCap - 1) {
-    // The server counts held up to one past the cap.
-    return `${left} left this month · ${count(Math.min(usage.held ?? 0, usage.liveCap))} of ${count(usage.liveCap)} in use`;
+  const held = usage.held ?? 0;
+  if (usage.liveCap !== undefined && held >= usage.liveCap - 1) {
+    // The server counts held up to one past the cap, so past it the exact number isn't known.
+    if (held > usage.liveCap) return `More than ${count(usage.liveCap)} in use`;
+    const inUse = `${count(held)} of ${count(usage.liveCap)} in use`;
+    return held === usage.liveCap ? inUse : `${left} left this month · ${inUse}`;
   }
   return `${left} of ${count(usage.monthly)} left this month${withPlan ? ` · ${TIER_LABEL[usage.tier]} plan` : ""}`;
 }
@@ -117,12 +121,18 @@ export function limitReached(
   if (!monthly && !kept) return null;
   const resets = new Date(usage.resetsAt).toLocaleDateString(locale, { month: "short", day: "numeric" });
   const plan = TIER_LABEL[usage.tier];
+  const cap = usage.liveCap === undefined ? "" : count(usage.liveCap);
+  // The server counts held up to one past the cap: past it, how many there are isn't known.
+  const over = kept && usage.held! > usage.liveCap!;
   return {
     sentences: [
       ...(monthly ? [`You've used this month's ${count(usage.monthly)} short links. You can make more on ${resets}.`] : []),
       // Deleting is permanent and gives nothing back this month, so it is only asked for when it would help now.
-      ...(kept && monthly ? [`After that you'd also need to delete one: the ${plan} plan holds up to ${count(usage.liveCap!)} at a time.`] : []),
-      ...(kept && !monthly ? [`You have ${count(usage.liveCap!)} short links, and the ${plan} plan holds up to ${count(usage.liveCap!)} at a time. Delete one to make room.`] : []),
+      ...(kept && monthly ? [`After that you'd also need to delete ${over ? "some" : "one"}: the ${plan} plan holds up to ${cap} at a time.`] : []),
+      ...(kept && !monthly && !over ? [`You have ${cap} short links, and the ${plan} plan holds up to ${cap} at a time. Delete one to make room.`] : []),
+      ...(kept && !monthly && over
+        ? [`The ${plan} plan holds up to ${cap} short links at a time, and you have more than ${cap}. Delete some to get to ${count(usage.liveCap! - 1)} or fewer.`]
+        : []),
     ],
     upgrade: monthly && (usage.tier === "free" || usage.tier === "edu"),
     manage: kept,
@@ -137,8 +147,9 @@ export function limitReached(
  * worker tracks, never the email, which can be missing on one open and there
  * on the next) and parsed address, so a record only ever applies to the
  * account and page it was made for. It has no time
- * limit: it goes when the request is answered, when a short link for the
- * address shows up in the list, or with the browser session.
+ * limit: it goes when its own request is answered, when a creation for the
+ * page is confirmed, when a short link for the address shows up in the
+ * list, or with the browser session.
  */
 export const createRecordKey = (accountId: string, address: string) =>
   `bookmark-land:short-link-create:${accountId}:${address}`;
@@ -161,7 +172,7 @@ export function unfinishedSentence(at: number, now: number, locale?: string): st
 
 // ---- view ----------------------------------------------------------------------
 
-/** One creation request, kept in the popup's root so leaving the view doesn't lose it. */
+/** One creation request. */
 export type ShortLinkCreation =
   | { status: "creating"; slow: boolean }
   /** `copied`: whether the click's clipboard write worked; null while the clipboard hasn't answered (or wasn't asked). */
@@ -175,6 +186,118 @@ export type ShortLinkCreation =
 export function refusalFrom(error: unknown): string | null {
   return error instanceof ConvexError && typeof error.data === "string" ? error.data : null;
 }
+
+/**
+ * What the popup's latest copy put on the clipboard (the short link, its
+ * tracked QR code, the page's plain QR code, or its address) and the address
+ * it was of: a line about the clipboard is only ever shown beside that one.
+ */
+export type Copied = { what: "link" | "tracked-image" | "image" | "address"; url: string };
+
+/**
+ * Everything the popup remembers about the page's short links while it is
+ * open, kept in its root so leaving the view loses none of it. Only the
+ * functions below change it.
+ */
+export type ShortLinkSession = {
+  creation: ShortLinkCreation | null;
+  /**
+   * A creation for this account and address that was never answered: when it
+   * started, and whether the user chose to create again anyway. It ends only
+   * with a confirmed creation or a short link for the page in the list.
+   * undefined = not read yet (it can't be before the account id is known).
+   */
+  record: { at: number; startedOver: boolean } | null | undefined;
+  /**
+   * The page's short links (and the created one, wherever it points) as the
+   * lists last had them, newest first. A list that failed or was cut off
+   * never removes one.
+   */
+  rows: ShortLinkRow[];
+  /** Short links a complete list confirmed gone. Final while the popup is open: no later list brings one back. */
+  deleted: string[];
+  /** The short link the view showed was deleted, and nothing has been shown or created since. */
+  lost: boolean;
+  /** The popup's latest copy, in the Short link view or the QR code view. */
+  copied: Copied | null;
+};
+
+export const NEW_SESSION: ShortLinkSession = { creation: null, record: undefined, rows: [], deleted: [], lost: false, copied: null };
+
+/** The short link the view shows: the created one, else the page's (see findShortLink). */
+const shownIn = (session: ShortLinkSession, address: string) =>
+  session.creation?.status === "created" ? session.creation.shortUrl : findShortLink(session.rows, address)?.shortUrl;
+
+/**
+ * The session after a list answer. A list that is loading or failed changes
+ * nothing. A complete one is the truth: a remembered short link missing from
+ * it was deleted, which also discards the creation that made it. One that was
+ * cut off updates what it has and leaves the rest as last confirmed. A short
+ * link for the page answers the record's question. Applying the same list
+ * twice changes nothing more, and an unchanged session is returned as it was.
+ */
+export function observeList(session: ShortLinkSession, list: ShortLinkList | Error | undefined, address: string): ShortLinkSession {
+  if (!list || list instanceof Error) return session;
+  const unlisted = session.rows.filter((row) => !list.links.some((link) => link.shortUrl === row.shortUrl));
+  const deleted = list.truncated ? session.deleted : [...session.deleted, ...unlisted.map((row) => row.shortUrl)];
+  const created = session.creation?.status === "created" ? session.creation.shortUrl : null;
+  const next: ShortLinkSession = {
+    ...session,
+    creation: created !== null && deleted.includes(created) ? null : session.creation,
+    rows: [
+      ...list.links.filter((link) => !deleted.includes(link.shortUrl) && (link.targetUrl === address || link.shortUrl === created)),
+      // Older than anything in a list cut to the newest.
+      ...(list.truncated ? unlisted : []),
+    ],
+    deleted,
+  };
+  const before = shownIn(session, address);
+  const match = findShortLink(next.rows, address);
+  if (match) next.record = null;
+  next.lost = shownIn(next, address) ? false : session.lost || (before !== undefined && deleted.includes(before));
+  return JSON.stringify(next) === JSON.stringify(session) ? session : next;
+}
+
+/** What the user's actions and a creation's answer do to the session. */
+export const shortLinkSession = {
+  /** The stored record was read: `at` is when its creation started, null for none. */
+  recordRead: (session: ShortLinkSession, at: number | null): ShortLinkSession => ({
+    ...session,
+    record: at === null ? null : { at, startedOver: false },
+  }),
+  /** "Create a new short link": on to the ordinary view. The record stays, as the attempt is still unanswered. */
+  startOver: (session: ShortLinkSession): ShortLinkSession => ({
+    ...session,
+    record: session.record ? { ...session.record, startedOver: true } : session.record,
+  }),
+  /** Create was clicked (`slow`: and has run long). What the clipboard held is about to be replaced. */
+  creating: (session: ShortLinkSession, slow = false): ShortLinkSession => ({
+    ...session,
+    lost: false,
+    copied: null,
+    creation: { status: "creating", slow },
+  }),
+  /** A confirmed creation: it also answers an earlier attempt's warning, since the page now has a short link. */
+  created: (session: ShortLinkSession, shortUrl: string): ShortLinkSession => ({
+    ...session,
+    record: null,
+    creation: { status: "created", shortUrl, copied: null },
+  }),
+  /** The clipboard answered the creation's own write of `shortUrl`. */
+  copySettled: (session: ShortLinkSession, shortUrl: string, ok: boolean): ShortLinkSession => ({
+    ...session,
+    creation:
+      session.creation?.status === "created" && session.creation.shortUrl === shortUrl ? { ...session.creation, copied: ok } : session.creation,
+    copied: ok ? { what: "link", url: shortUrl } : session.copied,
+  }),
+  /** A copy made with one of the popup's buttons reached the clipboard. */
+  copied: (session: ShortLinkSession, copied: Copied): ShortLinkSession => ({ ...session, copied }),
+  /** `sentence`: the server's, when it refused the address. An earlier unanswered attempt stays unanswered. */
+  failed: (session: ShortLinkSession, sentence: string | null): ShortLinkSession => ({
+    ...session,
+    creation: sentence ? { status: "refused", sentence } : { status: "failed" },
+  }),
+};
 
 export type ShortLinkView =
   /** Short links aren't open to this account. */
@@ -193,8 +316,8 @@ export type ShortLinkView =
     }
   /**
    * A creation was started and the popup closed before its answer. "Check
-   * again" asks the server; "Start over" drops the record, which leaves the
-   * ordinary view. `limit`: the limit sentences are shown here too.
+   * again" asks the server; "Create a new short link" goes on to the ordinary
+   * view, which keeps a warning. `limit`: the limit sentences are shown here too.
    */
   | { kind: "unfinished"; at: number; checking: boolean; limit: boolean }
   /** The month's allowance or the cap on short links held at once is reached. `deleted`: as in "create". */
@@ -210,20 +333,18 @@ export type ShortLinkView =
       failed: boolean;
       /** The short link this view showed was deleted elsewhere. */
       deleted: boolean;
+      /** An earlier attempt was never answered: creating now may make a second short link. */
+      unresolved: boolean;
     };
 
 /**
- * What the Short link view shows. Precedence: a finished creation (its
- * status and destination follow its row once the list has it); short
- * links closed to the account; a creation in flight or refused; an address
- * that is never sent; the short link last confirmed, while the list can't
- * say otherwise; load failures (the account id among them); loading;
- * the page's existing short link; an unfinished creation; a reached limit;
- * then Create.
- *
- * A short link whose row was seen in the list and is missing from a later
- * complete list was deleted: the ordinary view follows, marked `deleted`.
- * A created one whose row hasn't been seen yet is only waiting for it.
+ * What the Short link view shows, from the session (see observeList) and what
+ * is loading. Precedence: a finished creation (its status and destination
+ * follow its row once a list has it); short links closed to the account; a
+ * creation in flight or refused; an address that is never sent; the page's
+ * short link as last confirmed, whatever is loading or failed now; load
+ * failures (the account id among them); loading; an unfinished creation; a
+ * reached limit; then Create.
  */
 export function deriveShortLinkView(input: {
   /** The page's address, parsed (see parseAddress). */
@@ -235,20 +356,14 @@ export function deriveShortLinkView(input: {
   accountId: string | null | undefined;
   /** undefined = Quick save is still checking or saving the page; null = not a Bookmark */
   bookmarkId: string | null | undefined;
-  creation: ShortLinkCreation | null;
-  /** When an unanswered creation for this account and address started; undefined = not read yet (it can't be before the account id is known) */
-  record: number | null | undefined;
-  /** The row of the short link shown, as the list last had it; null = not seen in the list (yet) */
-  seen: ShortLinkRow | null;
+  /** As observeList left it for `list`. */
+  session: ShortLinkSession;
 }): ShortLinkView {
-  const { address, usage, list, creation, record, seen } = input;
-  const live = list && !(list instanceof Error) ? list : null;
-  const rowOf = (shortUrl: string) => live?.links.find((link) => link.shortUrl === shortUrl);
-  // Only a complete list can say a short link is gone: a failed or cut-off one leaves the last confirmed state.
-  const deleted = seen !== null && live !== null && !live.truncated && !rowOf(seen.shortUrl);
-  if (creation?.status === "created" && !(deleted && seen.shortUrl === creation.shortUrl)) {
-    // Shown at once; the list's row, when it arrives, says whether it still opens and where.
-    const row = rowOf(creation.shortUrl) ?? (seen?.shortUrl === creation.shortUrl ? seen : undefined);
+  const { address, usage, list } = input;
+  const { creation, record, rows, lost } = input.session;
+  if (creation?.status === "created") {
+    // Shown at once; its row, when a list has it, says whether it still opens and where.
+    const row = rows.find((link) => link.shortUrl === creation.shortUrl);
     return {
       kind: "link",
       shortUrl: creation.shortUrl,
@@ -259,30 +374,30 @@ export function deriveShortLinkView(input: {
     };
   }
   if (usage && !(usage instanceof Error) && !usage.available) return { kind: "unavailable" };
-  const create = { kind: "create", truncated: false, saved: input.bookmarkId != null, failed: false, deleted } as const;
+  const unanswered = record != null && !record.startedOver;
+  const create = {
+    kind: "create",
+    truncated: false,
+    saved: input.bookmarkId != null,
+    failed: false,
+    deleted: lost,
+    unresolved: record != null && record.startedOver,
+  } as const;
   if (creation?.status === "creating") return { ...create, wait: creation.slow ? "creating-slow" : "creating" };
   if (creation?.status === "refused") return { kind: "refused", sentence: creation.sentence };
   if (refusedLocally(address)) return { kind: "refused", sentence: "This address can't be shortened." };
-  const match = live && findShortLink(live.links, address);
-  const link = (row: ShortLinkRow): ShortLinkView => ({
-    kind: "link",
-    shortUrl: row.shortUrl,
-    targetUrl: row.targetUrl,
-    state: shortLinkState(row),
-    outcome: "existing",
-    copied: null,
-  });
-  // Its row is missing from a list that can't be read, or only in part: the last confirmed state stands.
-  if (seen && !deleted && !match && !rowOf(seen.shortUrl)) return link(seen);
+  const match = findShortLink(rows, address);
+  if (match) {
+    return { kind: "link", shortUrl: match.shortUrl, targetUrl: match.targetUrl, state: shortLinkState(match), outcome: "existing", copied: null };
+  }
   if (usage instanceof Error || list instanceof Error || input.accountId === null) return { kind: "failed" };
-  // With a record, the view never falls back to a plain Create while the list loads.
-  if (record != null && list === undefined) return { kind: "unfinished", at: record, checking: true, limit: false };
+  // With an unanswered record, the view never falls back to a plain Create while the list loads.
+  if (unanswered && list === undefined) return { kind: "unfinished", at: record.at, checking: true, limit: false };
   if (usage === undefined || list === undefined || record === undefined) return { ...create, wait: "allowance" };
 
-  if (match) return link(match);
   const limit = limitReached(usage) !== null;
-  if (record !== null) return { kind: "unfinished", at: record, checking: false, limit };
-  if (limit) return { kind: "limit", deleted };
+  if (unanswered) return { kind: "unfinished", at: record.at, checking: false, limit };
+  if (limit) return { kind: "limit", deleted: lost };
   return {
     ...create,
     wait: input.bookmarkId === undefined ? "page" : null,
@@ -290,3 +405,13 @@ export function deriveShortLinkView(input: {
     failed: creation?.status === "failed",
   };
 }
+
+/** The two copies the Short link view makes. Anything else copied since (the page's plain QR code, its address) leaves no line. */
+const ON_CLIPBOARD: Partial<Record<Copied["what"], string>> = {
+  link: "The short link is on your clipboard.",
+  "tracked-image": "The QR image is on your clipboard.",
+};
+
+/** The clipboard line for the view: only beside a short link that opens, and only when the popup's latest copy was of that one. */
+export const clipboardLine = (view: ShortLinkView, copied: Copied | null) =>
+  view.kind === "link" && view.state === "active" && copied?.url === view.shortUrl ? ON_CLIPBOARD[copied.what] : undefined;

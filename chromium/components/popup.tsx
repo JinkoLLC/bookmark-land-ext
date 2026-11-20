@@ -299,7 +299,7 @@ function SignedInView() {
               onBack={views.back}
               onShortLink={shortLink.open ? openShortLink : undefined}
               canShorten={!refusedLocally(tab.address)}
-              onCopied={shortLink.setLastCopied}
+              onCopied={(what) => shortLink.setLastCopied({ what, url: tab.url })}
             />
           )}
           {view === "short" && tab && <ShortLinkView tab={tab} model={shortLink} onBack={views.back} />}
@@ -417,11 +417,11 @@ function PrivacyNote({
         </>
       ) : (
         <>
-          While signed in, the address of the page you&apos;re viewing is checked
-          against your library to show the saved badge, and its site against
-          bookmark.land&apos;s Site security results when you open this popup.
-          Nothing is added to your library unless you save the page.
-          {shortLinks && " Creating a short link stores this address with it."}
+          While signed in, the address of each page you view is checked against
+          your library for the saved badge, and its site against Site security
+          when this popup opens.
+          {!saved && " A bookmark is added only when you save the page."}
+          {shortLinks && " A short link stores this address."}
         </>
       )}{" "}
       {summary && (

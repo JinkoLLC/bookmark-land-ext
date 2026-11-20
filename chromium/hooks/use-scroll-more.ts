@@ -10,7 +10,9 @@ export const MORE_BELOW =
 
 /**
  * Whether a scrolling element's content is taller than its box (`overflows`)
- * and whether some of it is still below the fold (`more`). `ref` goes on the
+ * and whether some of it is still below the fold (`more`). The content's own
+ * bottom padding doesn't count as more: with only that hidden, a fade would
+ * lie over the last line of text and promise nothing. `ref` goes on the
  * element, which may mount later than its owner.
  */
 export function useScrollMore() {
@@ -20,7 +22,9 @@ export function useScrollMore() {
   const check = () => {
     if (!element) return;
     const overflows = element.scrollHeight > element.clientHeight;
-    const more = element.scrollHeight - element.scrollTop - element.clientHeight > 1;
+    const content = element.firstElementChild;
+    const padding = content ? parseFloat(getComputedStyle(content).paddingBottom) || 0 : 0;
+    const more = element.scrollHeight - element.scrollTop - element.clientHeight > padding + 1;
     setState((now) => (now.overflows === overflows && now.more === more ? now : { overflows, more }));
   };
 

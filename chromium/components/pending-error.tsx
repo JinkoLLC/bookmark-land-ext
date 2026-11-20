@@ -5,7 +5,7 @@ import { browser } from "wxt/browser";
 import { openUpgrade } from "@/components/quick-save";
 import { StatusLine } from "@/components/status-line";
 import { REFRESH_BADGE_MESSAGE } from "@/utils/messages";
-import { limitSentence } from "@/utils/quick-save";
+import { limitSentence, stateFromResult } from "@/utils/quick-save";
 import {
   PENDING_ERROR_KEY,
   isPendingSilentError,
@@ -60,8 +60,9 @@ export function PendingErrorBanner() {
     setRetrying(true);
     setRetryFailed(false);
     try {
-      await createBookmark({ url, skipDuplicates: true });
-      setSaved(`Saved ${extractDomain(url)}.`);
+      const { status } = stateFromResult(await createBookmark({ url, skipDuplicates: true }));
+      const site = extractDomain(url);
+      setSaved(status === "restored" ? `Restored ${site} from Trash.` : status === "already-saved" ? `${site} was already in your library.` : `Saved ${site}.`);
       await clear();
       browser.runtime.sendMessage({ type: REFRESH_BADGE_MESSAGE }).catch(() => {});
     } catch (error) {
@@ -102,8 +103,8 @@ export function PendingErrorBanner() {
             Retry failed. Still can&apos;t save.
           </StatusLine>
         )}
-        {/* Why neither button does anything for now: Dismiss keeps its label, so this one is on screen. */}
-        <p id="retrying-note" role="status" className={retrying ? "text-xs text-neutral-500 dark:text-neutral-400" : "sr-only"}>
+        {/* Why neither button does anything for now. Retry's own label shows the progress: this names it for a screen reader. */}
+        <p id="retrying-note" role="status" className="sr-only">
           {retrying && "Trying the save again…"}
         </p>
         <div className="mt-1 flex gap-2">

@@ -1,19 +1,26 @@
 import { describe, expect, it } from "vitest";
 import { ConvexError } from "convex/values";
 import {
+  NEW_SESSION,
   addressParts,
   allowanceLine,
+  clipboardLine,
   createRecordKey,
   deriveShortLinkView,
   findShortLink,
   limitReached,
+  observeList,
   parseAddress,
   readCreateRecord,
   refusalFrom,
   refusedLocally,
+  shortLinkSession,
   unfinishedSentence,
+  type ShortLinkList,
   type ShortLinkRow,
+  type ShortLinkSession,
   type ShortLinkUsage,
+  type ShortLinkView,
 } from "./short-link";
 
 const PAGE = "https://gridnotes.example/pilots?ref=newsletter";
@@ -94,11 +101,13 @@ describe("allowanceLine", () => {
     expect(allowanceLine({ ...PRO, created: 60 })).toBe("0 of 50 left this month");
   });
 
-  it("names the cap on short links held at once only when it is reached or one away", () => {
+  it("names the cap on short links held at once one away from it, and alone once it is reached", () => {
     expect(allowanceLine(EDU, true)).toBe("10 left this month · 24 of 25 in use");
-    expect(allowanceLine({ ...EDU, tier: "free", held: 25, created: 25 })).toBe("0 left this month · 25 of 25 in use");
-    // The server counts held up to one past the cap.
-    expect(allowanceLine({ ...EDU, held: 26 })).toBe("10 left this month · 25 of 25 in use");
+    // What is left of the month can't be used at the cap, so it isn't offered.
+    expect(allowanceLine({ ...EDU, held: 25 })).toBe("25 of 25 in use");
+    expect(allowanceLine({ ...EDU, tier: "free", held: 25, created: 25 })).toBe("25 of 25 in use");
+    // The server counts held up to one past the cap: the exact number isn't known.
+    expect(allowanceLine({ ...EDU, held: 26 })).toBe("More than 25 in use");
     expect(allowanceLine({ ...EDU, held: 23 }, true)).toBe("10 of 25 left this month · Education plan");
     expect(allowanceLine({ ...EDU, tier: "free", held: 12, created: 25 })).toBe("0 of 25 left this month");
   });
@@ -125,13 +134,22 @@ describe("limitReached", () => {
       upgrade: false,
       manage: true,
     });
-    const both = limitReached({ ...EDU, tier: "free", held: 26, created: 25 }, "en-US")!;
+    const both = limitReached({ ...EDU, tier: "free", held: 25, created: 25 }, "en-US")!;
     expect(both.sentences).toEqual([
       "You've used this month's 25 short links. You can make more on Dec 1.",
       // Deleting wouldn't help this month, so it isn't asked for as the next step.
       "After that you'd also need to delete one: the Free plan holds up to 25 at a time.",
     ]);
     expect(both).toMatchObject({ upgrade: true, manage: true });
+  });
+
+  it("asks for more than one deletion above the cap, where the exact count isn't known", () => {
+    expect(limitReached({ ...EDU, held: 26 }, "en-US")?.sentences).toEqual([
+      "The Education plan holds up to 25 short links at a time, and you have more than 25. Delete some to get to 24 or fewer.",
+    ]);
+    expect(limitReached({ ...EDU, tier: "free", held: 26, created: 25 }, "en-US")?.sentences[1]).toBe(
+      "After that you'd also need to delete some: the Free plan holds up to 25 at a time.",
+    );
   });
 });
 
@@ -170,159 +188,233 @@ describe("refusalFrom", () => {
   });
 });
 
-describe("deriveShortLinkView", () => {
-  const base = {
-    address: PAGE,
-    usage: PRO,
-    list: { links: [] as ShortLinkRow[], truncated: false },
-    accountId: "user_alex",
-    bookmarkId: null,
-    creation: null,
-    record: null,
-    seen: null,
+const NEW = "https://bkmk.to/n3w";
+const complete = (...links: ShortLinkRow[]): ShortLinkList => ({ links, truncated: false });
+/** Only the newest 1,000: what isn't in it may still exist. */
+const cutOff = (...links: ShortLinkRow[]): ShortLinkList => ({ links, truncated: true });
+const FAILED = new Error("Server Error");
+
+describe("deriveShortLinkView, one state at a time", () => {
+  const base = { address: PAGE, usage: PRO, list: complete(), accountId: "user_alex", bookmarkId: null };
+  /** The view for these answers, in a session whose record was read (none) unless `session` says otherwise. */
+  const view = (over: Partial<typeof base> | object = {}, session: Partial<ShortLinkSession> = {}) => {
+    const input = { ...base, ...over };
+    return deriveShortLinkView({ ...input, session: observeList({ ...NEW_SESSION, record: null, ...session }, input.list, PAGE) });
   };
-  const create = { kind: "create", wait: null, truncated: false, saved: false, failed: false, deleted: false };
+  const create = { kind: "create", wait: null, truncated: false, saved: false, failed: false, deleted: false, unresolved: false };
 
   it("offers Create for a page without a short link", () => {
-    expect(deriveShortLinkView(base)).toEqual(create);
-    expect(deriveShortLinkView({ ...base, bookmarkId: "bm1" })).toEqual({ ...create, saved: true });
-    expect(deriveShortLinkView({ ...base, list: { links: [], truncated: true } })).toEqual({ ...create, truncated: true });
+    expect(view()).toEqual(create);
+    expect(view({ bookmarkId: "bm1" })).toEqual({ ...create, saved: true });
+    expect(view({ list: cutOff() })).toEqual({ ...create, truncated: true });
   });
 
   it("waits for the allowance, the list, the record and Quick save's answer", () => {
-    expect(deriveShortLinkView({ ...base, usage: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
-    expect(deriveShortLinkView({ ...base, list: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
-    expect(deriveShortLinkView({ ...base, record: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
-    expect(deriveShortLinkView({ ...base, bookmarkId: undefined })).toMatchObject({ kind: "create", wait: "page" });
+    expect(view({ usage: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
+    expect(view({ list: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
+    expect(view({}, { record: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
+    expect(view({ bookmarkId: undefined })).toMatchObject({ kind: "create", wait: "page" });
   });
 
   it("reports a failed load", () => {
-    expect(deriveShortLinkView({ ...base, list: new Error("x") })).toEqual({ kind: "failed" });
-    expect(deriveShortLinkView({ ...base, usage: new Error("x") })).toEqual({ kind: "failed" });
+    expect(view({ list: FAILED })).toEqual({ kind: "failed" });
+    expect(view({ usage: FAILED })).toEqual({ kind: "failed" });
   });
 
   it("offers no Create without the account id: it waits for it, and fails when the worker can't say", () => {
     // The record can't be read before the id is known.
-    expect(deriveShortLinkView({ ...base, accountId: undefined, record: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
-    expect(deriveShortLinkView({ ...base, accountId: null, record: undefined })).toEqual({ kind: "failed" });
+    expect(view({ accountId: undefined }, { record: undefined })).toMatchObject({ kind: "create", wait: "allowance" });
+    expect(view({ accountId: null }, { record: undefined })).toEqual({ kind: "failed" });
   });
 
   it("closes the view when short links aren't open to the account, even mid-creation", () => {
     const usage = { ...PRO, available: false };
-    expect(deriveShortLinkView({ ...base, usage })).toEqual({ kind: "unavailable" });
-    expect(deriveShortLinkView({ ...base, usage, creation: { status: "creating", slow: false } })).toEqual({ kind: "unavailable" });
+    expect(view({ usage })).toEqual({ kind: "unavailable" });
+    expect(view({ usage }, { creation: { status: "creating", slow: false } })).toEqual({ kind: "unavailable" });
   });
 
   it("never sends an address the server always refuses", () => {
-    expect(deriveShortLinkView({ ...base, address: "http://localhost:3000/", usage: undefined, list: undefined })).toEqual({
+    expect(deriveShortLinkView({ ...base, address: "http://localhost:3000/", usage: undefined, list: undefined, session: NEW_SESSION })).toEqual({
       kind: "refused",
       sentence: "This address can't be shortened.",
     });
   });
 
-  it("shows the page's short link with its state", () => {
-    const view = (row: ShortLinkRow) => deriveShortLinkView({ ...base, list: { links: [row], truncated: false } });
-    expect(view(link())).toEqual({ kind: "link", shortUrl: "https://bkmk.to/k7m2qx", targetUrl: PAGE, state: "active", outcome: "existing", copied: null });
-    expect(view(link({ userPaused: true }))).toMatchObject({ state: "paused" });
-    expect(view(link({ lapsePaused: true }))).toMatchObject({ state: "paused" });
-    expect(view(link({ status: "blocked", userPaused: true }))).toMatchObject({ state: "blocked" });
+  it("shows the page's short link with its state, whatever else is loading or failed", () => {
+    expect(view({ list: complete(link()) })).toEqual({ kind: "link", shortUrl: "https://bkmk.to/k7m2qx", targetUrl: PAGE, state: "active", outcome: "existing", copied: null });
+    expect(view({ list: complete(link({ userPaused: true })) })).toMatchObject({ state: "paused" });
+    expect(view({ list: complete(link({ lapsePaused: true })) })).toMatchObject({ state: "paused" });
+    expect(view({ list: complete(link({ status: "blocked", userPaused: true })) })).toMatchObject({ state: "blocked" });
+    expect(view({ list: complete(link()), usage: FAILED })).toMatchObject({ kind: "link" });
+    expect(view({ list: complete(link()), usage: { ...PRO, created: 50 } })).toMatchObject({ kind: "link" });
   });
 
-  it("follows one creation from the click to its answer", () => {
-    expect(deriveShortLinkView({ ...base, creation: { status: "creating", slow: false } })).toMatchObject({ kind: "create", wait: "creating" });
-    expect(deriveShortLinkView({ ...base, creation: { status: "creating", slow: true } })).toMatchObject({ kind: "create", wait: "creating-slow" });
-    const created = { status: "created", shortUrl: "https://bkmk.to/n3w", copied: true } as const;
-    expect(deriveShortLinkView({ ...base, creation: created })).toEqual({
-      kind: "link",
-      shortUrl: "https://bkmk.to/n3w",
-      targetUrl: PAGE,
-      state: "active",
-      outcome: "created",
-      copied: true,
-    });
-    // The short link shows as created before the clipboard answers, and when it refuses: the two stay apart.
-    expect(deriveShortLinkView({ ...base, creation: { ...created, copied: null } })).toMatchObject({ outcome: "created", copied: null });
-    expect(deriveShortLinkView({ ...base, creation: { ...created, copied: false } })).toMatchObject({ outcome: "created", copied: false });
-    expect(deriveShortLinkView({ ...base, creation: { status: "refused", sentence: "No." } })).toEqual({ kind: "refused", sentence: "No." });
-    expect(deriveShortLinkView({ ...base, creation: { status: "failed" } })).toEqual({ ...create, failed: true });
-  });
-
-  it("follows a created short link's row once the list has it", () => {
-    const creation = { status: "created", shortUrl: "https://bkmk.to/n3w", copied: true } as const;
-    const withRow = (row: ShortLinkRow) => deriveShortLinkView({ ...base, creation, list: { links: [row], truncated: false } });
+  it("follows a created short link's row once a list has it, and waits for it until then", () => {
+    const creation = { status: "created", shortUrl: NEW, copied: true } as const;
+    const withRow = (...rows: ShortLinkRow[]) => view({ list: complete(...rows) }, { creation });
+    expect(withRow()).toEqual({ kind: "link", shortUrl: NEW, targetUrl: PAGE, state: "active", outcome: "created", copied: true });
     // Another short link for the same address isn't the created one.
-    expect(withRow(link())).toMatchObject({ shortUrl: "https://bkmk.to/n3w", state: "active", outcome: "created" });
-    expect(withRow(link({ shortUrl: "https://bkmk.to/n3w", userPaused: true }))).toMatchObject({ state: "paused", outcome: "created" });
-    expect(withRow(link({ shortUrl: "https://bkmk.to/n3w", status: "blocked" }))).toMatchObject({ state: "blocked" });
-    expect(withRow(link({ shortUrl: "https://bkmk.to/n3w", targetUrl: "https://gridnotes.example/moved" }))).toMatchObject({
+    expect(withRow(link())).toMatchObject({ shortUrl: NEW, state: "active", outcome: "created" });
+    expect(withRow(link({ shortUrl: NEW, userPaused: true }))).toMatchObject({ state: "paused", outcome: "created" });
+    expect(withRow(link({ shortUrl: NEW, status: "blocked" }))).toMatchObject({ state: "blocked" });
+    expect(withRow(link({ shortUrl: NEW, targetUrl: "https://gridnotes.example/moved" }))).toMatchObject({
       state: "active",
       targetUrl: "https://gridnotes.example/moved",
     });
   });
 
-  it("says a short link was deleted once its row, seen before, is missing from a complete list", () => {
-    const empty = { links: [], truncated: false };
-    // An existing one: the ordinary Create follows, or the limit when no more can be made.
-    expect(deriveShortLinkView({ ...base, seen: link(), list: empty })).toEqual({ ...create, deleted: true });
-    expect(deriveShortLinkView({ ...base, seen: link(), list: empty, usage: { ...PRO, created: 50 } })).toEqual({ kind: "limit", deleted: true });
-    // A created one, the same.
-    const creation = { status: "created", shortUrl: "https://bkmk.to/n3w", copied: true } as const;
-    const row = link({ shortUrl: "https://bkmk.to/n3w" });
-    expect(deriveShortLinkView({ ...base, creation, seen: row, list: empty })).toEqual({ ...create, deleted: true });
-    // Another short link for the page takes its place.
-    expect(deriveShortLinkView({ ...base, creation, seen: row, list: { links: [link()], truncated: false } })).toMatchObject({
-      kind: "link",
-      shortUrl: "https://bkmk.to/k7m2qx",
-      outcome: "existing",
-    });
-    // A new creation after it is an ordinary one.
-    expect(deriveShortLinkView({ ...base, creation: { status: "creating", slow: false }, list: empty })).toMatchObject({ wait: "creating", deleted: false });
+  it("stops at a reached limit", () => {
+    expect(view({ usage: { ...PRO, created: 50 } })).toEqual({ kind: "limit", deleted: false });
+    expect(view({ usage: { ...EDU, held: 25 } })).toEqual({ kind: "limit", deleted: false });
   });
+});
 
-  it("waits for a just-created short link's row instead of calling it deleted", () => {
-    const creation = { status: "created", shortUrl: "https://bkmk.to/n3w", copied: true } as const;
-    expect(deriveShortLinkView({ ...base, creation, list: { links: [], truncated: false } })).toMatchObject({ kind: "link", state: "active", outcome: "created" });
+describe("observeList", () => {
+  it("changes nothing for a list that is loading or failed, or one it has already seen", () => {
+    const session = observeList(NEW_SESSION, complete(link()), PAGE);
+    expect(observeList(session, undefined, PAGE)).toBe(session);
+    expect(observeList(session, FAILED, PAGE)).toBe(session);
+    expect(observeList(session, complete(link()), PAGE)).toBe(session);
+    // The same deletion, read twice.
+    const gone = observeList(session, complete(), PAGE);
+    expect(observeList(gone, complete(), PAGE)).toBe(gone);
   });
+});
 
-  it("keeps the last confirmed state while the list can't be read, or only in part", () => {
-    const paused = link({ userPaused: true });
-    for (const list of [new Error("x"), undefined, { links: [], truncated: true }]) {
-      expect(deriveShortLinkView({ ...base, seen: paused, list })).toMatchObject({ kind: "link", state: "paused", outcome: "existing" });
-      expect(deriveShortLinkView({ ...base, seen: link({ status: "blocked" }), list })).toMatchObject({ kind: "link", state: "blocked" });
-      const creation = { status: "created", shortUrl: paused.shortUrl, copied: null } as const;
-      expect(deriveShortLinkView({ ...base, creation, seen: paused, list })).toMatchObject({ kind: "link", state: "paused", outcome: "created" });
+// ---- the view over time ----------------------------------------------------------
+
+/** What happens between two looks at the view: an answer from the server, or something the user does. */
+type Act = Partial<{ list: ShortLinkList | Error | undefined; usage: ShortLinkUsage }> | ((session: ShortLinkSession) => ShortLinkSession);
+/** [what happens, the act, the view after it, the clipboard line after it (none unless given)] */
+type Step = [string, Act, Partial<ShortLinkView>, string?];
+
+const { recordRead, startOver, creating, created, failed, copySettled, copied } = shortLinkSession;
+const opened = (at: number | null) => (session: ShortLinkSession) => recordRead(session, at);
+const fail = (session: ShortLinkSession) => failed(session, null);
+const copy = (what: "link" | "tracked-image" | "image", url: string) => (session: ShortLinkSession) => copied(session, { what, url });
+const K7 = "https://bkmk.to/k7m2qx";
+const LINK_LINE = "The short link is on your clipboard.";
+const IMAGE_LINE = "The QR image is on your clipboard.";
+const newRow = link({ shortUrl: NEW });
+const usedUp = { ...PRO, created: 50 };
+
+const WALKS: Record<string, Step[]> = {
+  "create and copy, then deleted elsewhere: no later read brings it back": [
+    ["the view opens", opened(null), { kind: "create", wait: "allowance" }],
+    ["the list answers", { list: complete() }, { kind: "create", wait: null, deleted: false, unresolved: false }],
+    ["Create", creating, { kind: "create", wait: "creating" }],
+    ["eight seconds on", (session) => creating(session, true), { kind: "create", wait: "creating-slow" }],
+    ["the server answers", (session) => created(session, NEW), { kind: "link", shortUrl: NEW, state: "active", outcome: "created", copied: null }],
+    ["the clipboard takes it", (session) => copySettled(session, NEW, true), { kind: "link", copied: true }, LINK_LINE],
+    ["the list has its row", { list: complete(newRow) }, { kind: "link", shortUrl: NEW, outcome: "created" }, LINK_LINE],
+    ["Copy image", copy("tracked-image", NEW), { kind: "link", shortUrl: NEW }, IMAGE_LINE],
+    ["a list cut off, without it", { list: cutOff() }, { kind: "link", shortUrl: NEW, state: "active" }, IMAGE_LINE],
+    ["the list fails", { list: FAILED }, { kind: "link", shortUrl: NEW, state: "active" }, IMAGE_LINE],
+    ["the list loads again", { list: undefined }, { kind: "link", shortUrl: NEW, state: "active" }, IMAGE_LINE],
+    ["a complete list without it: deleted", { list: complete() }, { kind: "create", wait: null, deleted: true }],
+    ["a stale cut-off list still has it", { list: cutOff(newRow) }, { kind: "create", deleted: true, truncated: true }],
+    ["the list fails", { list: FAILED }, { kind: "failed" }],
+    ["a stale complete list still has it", { list: complete(newRow) }, { kind: "create", deleted: true }],
+    ["Create again", creating, { kind: "create", wait: "creating", deleted: false }],
+    ["it fails", fail, { kind: "create", wait: null, failed: true, deleted: false, unresolved: false }],
+  ],
+  "a deleted short link and a second one for the page: the second is shown as itself": [
+    ["the view opens on an empty list", opened(null), { kind: "create", wait: "allowance" }],
+    ["the list answers", { list: complete() }, { kind: "create", wait: null }],
+    ["Create", creating, { kind: "create", wait: "creating" }],
+    ["created", (session) => created(session, NEW), { kind: "link", shortUrl: NEW, outcome: "created" }],
+    ["copied", (session) => copySettled(session, NEW, true), { kind: "link", shortUrl: NEW }, LINK_LINE],
+    ["its row arrives", { list: complete(newRow) }, { kind: "link", shortUrl: NEW, outcome: "created" }, LINK_LINE],
+    // The clipboard still holds the deleted one's address: no line beside another short link.
+    ["deleted, and another made elsewhere", { list: complete(link()) }, { kind: "link", shortUrl: K7, outcome: "existing", copied: null }],
+    ["a stale cut-off list has only the deleted one", { list: cutOff(newRow) }, { kind: "link", shortUrl: K7, outcome: "existing" }],
+    ["the other is paused", { list: complete(link({ userPaused: true })) }, { kind: "link", shortUrl: K7, state: "paused" }],
+    ["the list fails", { list: FAILED }, { kind: "link", shortUrl: K7, state: "paused" }],
+    ["the other is deleted too", { list: complete() }, { kind: "create", deleted: true }],
+    ["both come back in a stale list", { list: cutOff(link(), newRow) }, { kind: "create", deleted: true }],
+  ],
+  "an existing short link: copied, paused, cut off, resumed, pointed elsewhere": [
+    ["the view opens", opened(null), { kind: "create", wait: "allowance" }],
+    ["the list has one for the page", { list: complete(link()) }, { kind: "link", shortUrl: K7, state: "active", outcome: "existing" }],
+    ["Copy", copy("link", K7), { kind: "link", state: "active" }, LINK_LINE],
+    // A paused one has no Copy, and nothing is said about the clipboard.
+    ["paused elsewhere", { list: complete(link({ userPaused: true })) }, { kind: "link", state: "paused" }],
+    ["a list cut off, without it", { list: cutOff() }, { kind: "link", state: "paused" }],
+    ["the list fails", { list: FAILED }, { kind: "link", state: "paused" }],
+    ["blocked", { list: cutOff(link({ status: "blocked" })) }, { kind: "link", state: "blocked" }],
+    // The clipboard was never written in between.
+    ["resumed", { list: complete(link()) }, { kind: "link", state: "active" }, LINK_LINE],
+    ["the plain QR image is copied in the QR code view", copy("image", PAGE), { kind: "link", state: "active" }],
+    // Not this page's any more, and not deleted.
+    ["pointed at another page", { list: complete(link({ targetUrl: "https://gridnotes.example/moved" })) }, { kind: "create", deleted: false }],
+  ],
+  "two short links for the page: the hidden one deleted, the shown one pointed elsewhere": [
+    ["the view opens", opened(null), { kind: "create" }],
+    ["the newest active one is shown", { list: complete(link({ shortUrl: "https://bkmk.to/new", userPaused: true }), link()) }, { kind: "link", shortUrl: K7, state: "active" }],
+    ["the paused one is deleted", { list: complete(link()) }, { kind: "link", shortUrl: K7 }],
+    // What was shown wasn't deleted, so nothing says it was.
+    ["the shown one is pointed elsewhere", { list: complete(link({ targetUrl: "https://gridnotes.example/moved" })) }, { kind: "create", deleted: false }],
+    ["a stale cut-off list has the deleted one", { list: cutOff(link({ shortUrl: "https://bkmk.to/new", userPaused: true })) }, { kind: "create", deleted: false }],
+  ],
+  "an unfinished creation, a new one that fails twice, then one that works": [
+    ["the view opens on a record", opened(5), { kind: "unfinished", at: 5, checking: true }],
+    ["the list has no match", { list: complete() }, { kind: "unfinished", checking: false, limit: false }],
+    ["the month is used up", { usage: usedUp }, { kind: "unfinished", limit: true }],
+    ["Check again: the list loads", { list: undefined, usage: PRO }, { kind: "unfinished", checking: true }],
+    ["still no match", { list: complete() }, { kind: "unfinished", checking: false }],
+    ["Create a new short link", startOver, { kind: "create", wait: null, unresolved: true, failed: false }],
+    ["Create", creating, { kind: "create", wait: "creating", unresolved: true }],
+    ["it fails", fail, { kind: "create", wait: null, failed: true, unresolved: true }],
+    ["the list fails", { list: FAILED }, { kind: "failed" }],
+    ["Retry: the list loads", { list: undefined }, { kind: "create", wait: "allowance", unresolved: true }],
+    ["the list is back, cut off", { list: cutOff() }, { kind: "create", wait: null, failed: true, unresolved: true, truncated: true }],
+    ["Create", creating, { kind: "create", wait: "creating", unresolved: true }],
+    ["it fails again", fail, { kind: "create", failed: true, unresolved: true }],
+    ["Create", creating, { kind: "create", wait: "creating", unresolved: true }],
+    ["created", (session) => created(session, NEW), { kind: "link", shortUrl: NEW, outcome: "created" }],
+    ["the clipboard refuses", (session) => copySettled(session, NEW, false), { kind: "link", copied: false }],
+    ["Copy", copy("link", NEW), { kind: "link", copied: false }, LINK_LINE],
+    ["its row arrives", { list: complete(newRow) }, { kind: "link", shortUrl: NEW }, LINK_LINE],
+    // The page had a confirmed short link since: the earlier attempt's warning doesn't return.
+    ["deleted elsewhere", { list: complete() }, { kind: "create", deleted: true, unresolved: false }],
+  ],
+  "an unfinished creation, a new one started, and the first turns up": [
+    ["the view opens on a record", opened(5), { kind: "unfinished", checking: true }],
+    ["the list has no match", { list: complete() }, { kind: "unfinished", checking: false }],
+    ["Create a new short link", startOver, { kind: "create", unresolved: true }],
+    ["the month is used up", { usage: usedUp }, { kind: "limit" }],
+    ["a new month", { usage: PRO }, { kind: "create", unresolved: true }],
+    ["the first attempt's short link shows up", { list: complete(link()) }, { kind: "link", shortUrl: K7, outcome: "existing" }],
+    ["and is deleted", { list: complete() }, { kind: "create", deleted: true, unresolved: false }],
+  ],
+  "an unfinished creation whose short link shows up in a cut-off list": [
+    ["the view opens on a record", opened(5), { kind: "unfinished", checking: true }],
+    ["a match", { list: cutOff(link({ userPaused: true })) }, { kind: "link", shortUrl: K7, state: "paused" }],
+    ["a cut-off list without it", { list: cutOff() }, { kind: "link", shortUrl: K7, state: "paused" }],
+    // The record was answered: no "unfinished" again.
+    ["deleted", { list: complete() }, { kind: "create", deleted: true, unresolved: false }],
+  ],
+  "the server refuses the address": [
+    ["the view opens", opened(null), { kind: "create" }],
+    ["the list answers", { list: complete() }, { kind: "create", wait: null }],
+    ["Create", creating, { kind: "create", wait: "creating" }],
+    ["refused", (session) => failed(session, "No."), { kind: "refused", sentence: "No." }],
+    ["a later list changes nothing", { list: cutOff() }, { kind: "refused", sentence: "No." }],
+  ],
+};
+
+describe("deriveShortLinkView, over time", () => {
+  it.each(Object.entries(WALKS))("%s", (_name, steps) => {
+    let session = NEW_SESSION;
+    let answers: { list: ShortLinkList | Error | undefined; usage: ShortLinkUsage } = { list: undefined, usage: PRO };
+    for (const [what, act, expected, line] of steps) {
+      if (typeof act === "function") session = act(session);
+      else answers = { ...answers, ...act };
+      // As the popup's root does on every render.
+      session = observeList(session, answers.list, PAGE);
+      const view = deriveShortLinkView({ address: PAGE, ...answers, accountId: "user_alex", bookmarkId: null, session });
+      expect(view, what).toMatchObject(expected);
+      expect(clipboardLine(view, session.copied), what).toBe(line);
     }
-    // Pointed at another page elsewhere, it is no longer this page's: not deleted, an ordinary Create.
-    const moved = { links: [link({ targetUrl: "https://gridnotes.example/moved" })], truncated: false };
-    expect(deriveShortLinkView({ ...base, seen: link(), list: moved })).toEqual(create);
-  });
-
-  it("never offers a plain Create while an unfinished creation is on record", () => {
-    const unfinished = { kind: "unfinished", at: 5, checking: false, limit: false };
-    expect(deriveShortLinkView({ ...base, record: 5 })).toEqual(unfinished);
-    expect(deriveShortLinkView({ ...base, record: 5, list: undefined })).toEqual({ ...unfinished, checking: true });
-    // Quick save still checking the page changes nothing here: nothing is created from this view.
-    expect(deriveShortLinkView({ ...base, record: 5, bookmarkId: undefined })).toEqual(unfinished);
-    // A match that arrives late replaces it.
-    expect(deriveShortLinkView({ ...base, record: 5, list: { links: [link()], truncated: false } })).toMatchObject({ kind: "link", outcome: "existing" });
-    // The limit sentences are shown with it.
-    expect(deriveShortLinkView({ ...base, record: 5, usage: { ...PRO, created: 50 } })).toEqual({ ...unfinished, limit: true });
-    expect(deriveShortLinkView({ ...base, record: 5, usage: { ...EDU, held: 25 } })).toEqual({ ...unfinished, limit: true });
-  });
-
-  it("is the ordinary view once Start over has dropped the record", () => {
-    // Start over sets the record to null: every ordinary rule applies again.
-    expect(deriveShortLinkView({ ...base, record: null })).toEqual(create);
-    expect(deriveShortLinkView({ ...base, record: null, usage: { ...PRO, created: 50 } })).toEqual({ kind: "limit", deleted: false });
-    expect(deriveShortLinkView({ ...base, record: null, bookmarkId: undefined })).toMatchObject({ kind: "create", wait: "page" });
-    expect(deriveShortLinkView({ ...base, record: null, creation: { status: "failed" } })).toEqual({ ...create, failed: true });
-    expect(deriveShortLinkView({ ...base, record: null, creation: { status: "refused", sentence: "No." } })).toEqual({ kind: "refused", sentence: "No." });
-    expect(deriveShortLinkView({ ...base, record: null, list: { links: [link()], truncated: false } })).toMatchObject({ kind: "link", outcome: "existing" });
-  });
-
-  it("stops at a reached limit, but still shows an existing short link", () => {
-    const usage = { ...PRO, created: 50 };
-    expect(deriveShortLinkView({ ...base, usage })).toEqual({ kind: "limit", deleted: false });
-    expect(deriveShortLinkView({ ...base, usage, list: { links: [link()], truncated: false } })).toMatchObject({ kind: "link" });
   });
 });

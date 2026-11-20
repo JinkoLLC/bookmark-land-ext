@@ -55,19 +55,15 @@ export function QrImage({
   svg,
   label,
   size,
-  describedBy,
 }: {
   svg: string;
   label: string;
   size: number;
-  /** The id of the address printed beside the code, when it isn't in the name. */
-  describedBy?: string;
 }) {
   return (
     <img
       src={svgDataUrl(svg)}
       alt={label}
-      aria-describedby={describedBy}
       width={size}
       height={size}
       className="shrink-0 rounded"
@@ -301,15 +297,17 @@ export function QrView({
           {svg ? (
             <>
               <div className="flex justify-center">
-                <QrImage svg={svg} label={`QR code for ${extractDomain(url)}`} size={200} describedBy="qr-address" />
+                {/* The whole address: two pages of one site never share a name. */}
+                <QrImage svg={svg} label={`QR code for ${url}`} size={200} />
               </div>
+              <PageAddress text={url} id="qr-address" className={MUTED} />
+              {/* Directly above the exports, so the warning and the action read together. */}
               {dense && (
                 <p className={`text-xs ${MUTED}`}>
                   This code is dense. Scan it from the downloaded PNG or a print
                   {shortLink() ? <>, or {shortLink("use a short link")}.</> : "."}
                 </p>
               )}
-              <PageAddress text={url} id="qr-address" className={MUTED} />
               <QrExports svg={svg} fileName={`qr-${extractDomain(url)}`} onCopied={() => onCopied?.("image")} />
               <p className={`text-xs ${MUTED}`}>
                 Made in your browser. It isn&apos;t tracked and can&apos;t be changed after printing.
