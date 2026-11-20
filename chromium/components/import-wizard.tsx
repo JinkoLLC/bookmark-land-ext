@@ -4,6 +4,7 @@ import { useAction, useConvexAuth, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
+import { SIGN_IN_URL } from "@/utils/sign-in-url";
 import { FolderOpen, Leaf, Loader2 } from "lucide-react";
 import {
   buildImportModel,
@@ -122,7 +123,7 @@ function SignedOut() {
         type="button"
         onClick={() =>
           void browser.tabs.create({
-            url: `${import.meta.env.WXT_WEB_APP_URL}/sign-in`,
+            url: SIGN_IN_URL,
           })
         }
         className="self-start rounded-full bg-emerald-600 px-4 py-2 font-semibold text-white shadow-sm shadow-emerald-900/20 transition hover:-translate-y-0.5 hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-ring"
