@@ -53,8 +53,10 @@ Important production values:
   settings, and collection-note links.
 - `WXT_CONVEX_URL=https://convex.bookmark.land` points at the production Convex
   deployment.
-- `WXT_CLERK_SYNC_HOST=https://bookmark.land` is the production web origin the
-  extension syncs Clerk sessions from.
+- `WXT_CLERK_SYNC_HOST=https://clerk.bookmark.land` is where the extension
+  reads the Clerk session from. Production Clerk keeps the `__client` cookie on
+  its Frontend API domain, not on the web app, so syncing from
+  `https://bookmark.land` leaves the extension signed out.
 - `WXT_CLERK_FRONTEND_API` and `WXT_CLERK_PUBLISHABLE_KEY` come from the Clerk
   production instance's Chrome Extension/API keys screen.
 
@@ -237,8 +239,9 @@ must update that page and the popup note too, so call it out in the pull request
 ## Auth model
 
 Signing into bookmark.land on the web signs the extension in automatically:
-`ClerkProvider` is configured with the web app as sync host (`syncHost`),
-and Convex queries authenticate with a Clerk JWT (template `convex`), the same
+`ClerkProvider` syncs the session from Clerk (`syncHost`: the Frontend API
+origin `clerk.bookmark.land` in production, where Clerk keeps the `__client`
+cookie), and Convex queries authenticate with a Clerk JWT (template `convex`), the same
 way the web app does. Signed out, the popup only
 offers a sign-in button that opens the web app's sign-in page — no
 credentials are ever entered in the extension.
