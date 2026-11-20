@@ -141,8 +141,9 @@ export function validateStoreEnvironment(source) {
   if (convex !== PRODUCTION_CONVEX_ORIGIN) {
     fail(`WXT_CONVEX_URL must equal ${PRODUCTION_CONVEX_ORIGIN}`);
   }
-  if (sync !== PRODUCTION_WEB_ORIGIN) {
-    fail(`WXT_CLERK_SYNC_HOST must equal ${PRODUCTION_WEB_ORIGIN}`);
+  // Production Clerk keeps the __client cookie on the Frontend API domain, not the web app.
+  if (sync !== PRODUCTION_CLERK_FAPI_ORIGIN) {
+    fail(`WXT_CLERK_SYNC_HOST must equal ${PRODUCTION_CLERK_FAPI_ORIGIN}`);
   }
   if (fapi !== PRODUCTION_CLERK_FAPI_ORIGIN) {
     fail(`WXT_CLERK_FRONTEND_API must equal ${PRODUCTION_CLERK_FAPI_ORIGIN}`);
