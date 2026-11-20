@@ -1,4 +1,5 @@
-import type { ReactNode } from "react";
+import { useRef, type ReactNode } from "react";
+import { CircleAlert, Loader2 } from "lucide-react";
 import { pageFeedNote, type CollectionOption } from "@/utils/organize";
 import { collectionWithPath, type ImportDestination } from "@/utils/import-destination";
 
@@ -13,6 +14,8 @@ export function DestinationPicker({
   importedName,
   options,
   onPage,
+  livePages = "ready",
+  onRetryLivePages,
   loading = false,
   disabled = false,
 }: {
@@ -23,10 +26,16 @@ export function DestinationPicker({
   options: CollectionOption[];
   /** How many live pages show each collection: an import into one is public there. */
   onPage: Map<string, number>;
+  /** Whether `onPage` is known yet: until it is, nothing is imported into an existing collection. */
+  livePages?: "loading" | "failed" | "ready";
+  onRetryLivePages?: () => void;
   loading?: boolean;
   disabled?: boolean;
 }) {
   const chosen = value.kind === "existing" ? collectionWithPath(options, value.id) : null;
+  // Said only once a collection is chosen: that is when Import waits on it.
+  const check = value.kind === "existing" && value.id && livePages !== "ready" ? livePages : null;
+  const select = useRef<HTMLSelectElement>(null);
   return (
     <fieldset disabled={disabled}>
       <legend className="sr-only">Import into</legend>
@@ -44,6 +53,7 @@ export function DestinationPicker({
           {value.kind === "existing" && (
             <>
             <select
+              ref={select}
               aria-label="Destination collection"
               value={value.id ?? ""}
               onChange={(e) =>
@@ -75,6 +85,38 @@ export function DestinationPicker({
             )}
             </>
           )}
+          {/* The status is mounted throughout, so its text is announced when it appears. */}
+          <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${check ? "mt-2" : ""}`}>
+            <div role="status" className="min-w-0">
+              {check && (
+                <p className="flex items-start gap-2 text-sm text-slate-900 dark:text-slate-100">
+                  {check === "loading" ? (
+                    <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 motion-safe:animate-spin dark:text-emerald-400" aria-hidden="true" />
+                  ) : (
+                    <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
+                  )}
+                  <span>
+                    {check === "loading"
+                      ? "Checking whether this collection appears on a live page…"
+                      : "Couldn’t check whether this collection appears on a live page."}
+                  </span>
+                </p>
+              )}
+            </div>
+            {check === "failed" && (
+              <button
+                type="button"
+                onClick={() => {
+                  // Retry leaves with the message: the focus goes to the collection it is about.
+                  select.current?.focus();
+                  onRetryLivePages?.();
+                }}
+                className="inline-flex min-h-6 items-center rounded-full border border-neutral-300 px-3 py-1 text-sm font-semibold transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
+              >
+                Retry
+              </button>
+            )}
+          </div>
         </Choice>
         <Choice
           label="A new collection I name"

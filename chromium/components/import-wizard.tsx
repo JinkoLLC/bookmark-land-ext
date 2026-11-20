@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/chrome-extension";
-import { useAction, useConvexAuth, useQuery } from "convex/react";
+import { useAction, useConvexAuth, useQueries, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
@@ -19,7 +19,7 @@ import {
   importedCollectionName,
   type ImportDestination,
 } from "@/utils/import-destination";
-import { buildCollectionOptions, livePageCounts } from "@/utils/organize";
+import { buildCollectionOptions, livePageCounts, type CollectionFeed } from "@/utils/organize";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { useStalled } from "@/hooks/use-stalled";
 import { allowanceWarningFor } from "@/utils/allowance";
@@ -33,6 +33,9 @@ import { parseReturnTabId } from "@/utils/setup-return";
 const FOCUS_RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const FILLED_BUTTON = `rounded-full bg-emerald-700 font-semibold text-white transition hover:bg-emerald-800 ${FOCUS_RING}`;
+
+const FEEDS = { feeds: { query: api.userPages.collectionFeeds, args: {} } };
+const NONE = {};
 
 /**
  * Browser import wizard: preview the native bookmark tree with per-folder
@@ -167,7 +170,16 @@ function Wizard() {
   // Session summary — remaining allowance for the over-limit warning.
   const sessionSummary = useQuery(api.subscriptions.getSubscriptionInfo);
   const collections = useQuery(api.collections.list);
-  const collectionFeeds = useQuery(api.userPages.collectionFeeds);
+  // Read with useQueries so a failed load comes back as a value (as the popup's
+  // picker does). A failed query keeps its error while subscribed: Retry drops
+  // the subscription for one render, so the client asks the server again.
+  const [feedsDropped, setFeedsDropped] = useState(false);
+  useEffect(() => {
+    if (feedsDropped) setFeedsDropped(false);
+  }, [feedsDropped]);
+  const feeds = useQueries(feedsDropped ? NONE : FEEDS).feeds as CollectionFeed[] | Error | undefined;
+  const livePages = feeds instanceof Error ? "failed" : feeds ? "ready" : "loading";
+  const collectionFeeds = feeds instanceof Error ? undefined : feeds;
 
   useEffect(() => {
     let cancelled = false;
@@ -207,7 +219,8 @@ function Wizard() {
   );
   const destinationArg = destinationArgFor(destination, importedName);
   // An existing collection may be shown on a live page: no import before its notice can appear.
-  const feedsPending = destination.kind === "existing" && collectionFeeds === undefined;
+  // The same holds when that information failed to load.
+  const feedsPending = destination.kind === "existing" && livePages !== "ready";
 
   if (roots === "failed") {
     return (
@@ -359,6 +372,8 @@ function Wizard() {
           importedName={importedName}
           options={options}
           onPage={livePageCounts(collectionFeeds)}
+          livePages={livePages}
+          onRetryLivePages={() => setFeedsDropped(true)}
           loading={collections === undefined}
           disabled={phase === "importing" || nothingSelected}
         />

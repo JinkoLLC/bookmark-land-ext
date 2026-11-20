@@ -9,7 +9,7 @@ import type { CollectionMenuState } from "@/components/collection-menu";
  * neighbour's fill can't cover its ring.
  */
 export const treeRowClass = (isSelected: boolean) =>
-  `relative flex min-h-7 cursor-default items-center gap-1 rounded border-l-2 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
+  `group relative flex min-h-7 cursor-default items-center gap-1 rounded border-l-2 focus-visible:z-10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring ${
     isSelected
       ? "border-primary bg-primary/10 font-medium"
       : "border-transparent hover:bg-neutral-100 dark:hover:bg-neutral-800"
@@ -83,8 +83,12 @@ export function CollectionRow({
           <Chevron open={node.isExpanded} />
         </span>
         <CollectionGlyph icon={node.icon} color={node.color} />
-        {/* Positioned so the visually hidden end of the name is clipped with it. */}
-        <span className="relative min-w-0 flex-1 truncate" title={node.name}>
+        {/* Positioned so the visually hidden end of the name is clipped with it.
+            Cut to one line; keyboard focus on the row unwraps it. */}
+        <span
+          className="relative min-w-0 flex-1 truncate group-focus-visible:whitespace-normal group-focus-visible:break-words"
+          title={node.name}
+        >
           {node.name}
           <span className="sr-only">
             , {node.bookmarkCount} {node.bookmarkCount === 1 ? "bookmark" : "bookmarks"}

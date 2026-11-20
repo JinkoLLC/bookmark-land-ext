@@ -348,7 +348,7 @@ function BookmarkList({
   onHasRows,
 }: {
   collectionId?: Id<"collections">;
-  listRef?: RefObject<HTMLDivElement | null>;
+  listRef: RefObject<HTMLDivElement | null>;
   /** Reports whether the open collection has bookmarks, once that is known. */
   onHasRows: (hasRows: boolean) => void;
 }) {
@@ -360,6 +360,16 @@ function BookmarkList({
   const risks = useSiteRisks(results.map((row) => row.domain));
   // One Site security box open at a time.
   const [openRisk, setOpenRisk] = useState<string | null>(null);
+
+  // "Load more" was activated with this many rows shown, and still has focus.
+  const loadingFrom = useRef<number | null>(null);
+  useEffect(() => {
+    const from = loadingFrom.current;
+    if (from === null || results.length <= from) return;
+    loadingFrom.current = null;
+    // The button may be gone with the last page: focus goes to the first new row.
+    listRef.current?.children[from]?.querySelector("button")?.focus();
+  }, [results.length, listRef]);
 
   const hasRows = status === "LoadingFirstPage" ? null : results.length > 0;
   useEffect(() => {
@@ -384,17 +394,21 @@ function BookmarkList({
           onRiskToggle={(open) => setOpenRisk(open ? row._id : null)}
         />
       ))}
-      {status === "CanLoadMore" && (
+      {(status === "CanLoadMore" || status === "LoadingMore") && (
+        // Not natively disabled while loading: the button would drop focus.
         <button
           type="button"
-          onClick={() => loadMore(PAGE_SIZE)}
-          className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-1.5 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
+          aria-disabled={status === "LoadingMore"}
+          onClick={() => {
+            if (status !== "CanLoadMore") return;
+            loadingFrom.current = results.length;
+            loadMore(PAGE_SIZE);
+          }}
+          onBlur={() => (loadingFrom.current = null)}
+          className="mt-1 w-full rounded-md border border-neutral-300 px-3 py-1.5 font-medium hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring aria-disabled:text-neutral-500 aria-disabled:hover:bg-transparent dark:border-neutral-700 dark:hover:bg-neutral-800 dark:aria-disabled:text-neutral-400"
         >
-          Load more
+          {status === "LoadingMore" ? "Loading…" : "Load more"}
         </button>
-      )}
-      {status === "LoadingMore" && (
-        <p className="px-2 py-1 text-neutral-500 dark:text-neutral-400">Loading…</p>
       )}
     </div>
   );
@@ -426,8 +440,9 @@ function BookmarkRow({
         <button
           type="button"
           onClick={() => void browser.tabs.create({ url: row.url })}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          // The title is cut to one line in the row: the tooltip has all of it, then the address.
+          className="group flex min-w-0 flex-1 items-center gap-2 rounded px-2 py-1.5 text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          // The title is cut to one line in the row: the tooltip has all of it, then the
+          // address, and keyboard focus unwraps it in place.
           title={`${row.title}\n${row.url}`}
         >
           {row.favicon ? (
@@ -439,10 +454,18 @@ function BookmarkRow({
             />
           )}
           <span className="min-w-0 flex-1">
-            <span className="block truncate">{row.title}</span>
+            <span className="block truncate group-focus-visible:whitespace-normal group-focus-visible:break-words">
+              {row.title}
+            </span>
             <span className="block truncate text-neutral-500 dark:text-neutral-400">{row.domain}</span>
           </span>
-          {row.isFavorite && <span aria-label="Favorite">★</span>}
+          {row.isFavorite && (
+            // Positioned so the visually hidden text stays inside the row.
+            <span className="relative">
+              <span aria-hidden="true">★</span>
+              <span className="sr-only">, favorite</span>
+            </span>
+          )}
         </button>
         {risk && (
           <SiteRiskToggle

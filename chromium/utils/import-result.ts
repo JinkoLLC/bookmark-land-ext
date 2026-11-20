@@ -64,11 +64,13 @@ export function importOutcome(result: ImportResult): ImportOutcome {
 
 export function importHeading(result: ImportResult): string {
   const added = bookmarks(result.imported + result.restored);
+  // All of them restored: the heading says so, and no line repeats the number.
+  const verb = result.imported === 0 ? "restored from Trash" : "imported";
   switch (importOutcome(result)) {
     case "imported":
-      return `${added} imported`;
+      return `${added} ${verb}`;
     case "partial":
-      return `${added} imported, ${formatCount(result.skipped)} could not be imported`;
+      return `${added} ${verb}, ${formatCount(result.skipped)} could not be imported`;
     case "already-here":
       return "Already all here";
     case "nothing":
@@ -87,19 +89,9 @@ export function importLines(result: ImportResult, planLimit: number | null = nul
   if (outcome === "imported")
     lines.push("Your library just grew. Everything is searchable on bookmark.land and in the Library panel.");
   if (outcome === "nothing") lines.push(`${bookmarks(result.skipped)} could not be imported.`);
-  // Without restored ones the heading's number is the whole story.
-  if (result.restored > 0) {
-    const parts: [number, string][] = [
-      [result.imported, "new"],
-      [result.restored, "restored from Trash"],
-    ];
-    lines.push(
-      `Imported: ${parts
-        .filter(([n]) => n > 0)
-        .map(([n, label]) => `${formatCount(n)} ${label}`)
-        .join(" · ")}`,
-    );
-  }
+  // Only a mix needs the split: all new or all restored, the heading is the whole story.
+  if (result.imported > 0 && result.restored > 0)
+    lines.push(`Imported: ${formatCount(result.imported)} new · ${formatCount(result.restored)} restored from Trash`);
   if (result.duplicates > 0)
     lines.push(`${formatCount(result.duplicates)} ${result.duplicates === 1 ? "was" : "were"} already in your library.`);
   // A fact beside the skips, not their cause: the result doesn't say why each was skipped.
