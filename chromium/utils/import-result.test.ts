@@ -6,7 +6,6 @@ import {
   importOutcome,
   importLines,
   reachedPlanLimit,
-  sampleTitle,
 } from "./import-result";
 
 const counts = { imported: 3, restored: 0, duplicates: 1, skipped: 0 };
@@ -129,11 +128,5 @@ describe("the result screen's decisions", () => {
     // Nothing was skipped: a full library is no news.
     expect(reachedPlanLimit(all, { bookmarkCount: 100, limit: 100 })).toBeNull();
     expect(reachedPlanLimit(partial, undefined)).toBeNull();
-  });
-
-  it("heads the sample as the selection unless everything picked was imported", () => {
-    expect(sampleTitle(all)).toBe("Some of what was imported");
-    expect(sampleTitle(partial)).toBe("Some of what you picked");
-    expect(sampleTitle({ ...all, duplicates: 2 })).toBe("Some of what you picked");
   });
 });

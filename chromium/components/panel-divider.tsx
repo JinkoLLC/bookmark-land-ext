@@ -78,7 +78,7 @@ export function PanelDivider({
   return (
     // 24 px tall so the line's hit area and the two buttons never cover a row.
     <div className="group relative h-6 shrink-0">
-      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-neutral-200 dark:bg-neutral-800" />
+      <div className="pointer-events-none absolute inset-x-0 top-1/2 h-px bg-neutral-300 dark:bg-neutral-700" />
       {/* Grip: says the line can be dragged. */}
       <div className="pointer-events-none absolute left-1/2 top-1/2 h-1 w-6 -translate-x-1/2 -translate-y-1/2 rounded-full bg-neutral-400 group-hover:bg-neutral-500 dark:bg-neutral-500 dark:group-hover:bg-neutral-400" />
       <div
@@ -120,8 +120,9 @@ export function PanelDivider({
         // The ring is drawn inside: the area spans the panel, so an outer ring would be cut off.
         className="absolute inset-0 cursor-row-resize focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
       />
-      {/* One pill for the pair. Its border is drawn over the buttons, so they stay 24 px inside the 24 px row. */}
-      <div className="absolute right-2 top-1/2 flex -translate-y-1/2 rounded-full bg-white after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:border after:border-neutral-300 dark:bg-neutral-900 dark:after:border-neutral-700">
+      {/* One pill for the pair, seated on the line: the line has the border's colour and runs on past it.
+          The border is drawn over the buttons, so they stay 24 px inside the 24 px row. */}
+      <div className="absolute right-6 top-1/2 flex -translate-y-1/2 rounded-full bg-white after:pointer-events-none after:absolute after:inset-0 after:rounded-full after:border after:border-neutral-300 dark:bg-neutral-900 dark:after:border-neutral-700">
         <button
           type="button"
           aria-label="Show more collections"

@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from "react";
+import { useRef, type ReactNode, type Ref } from "react";
 import { CircleAlert, Loader2 } from "lucide-react";
 import { pageFeedNote, type CollectionOption } from "@/utils/organize";
 import { collectionWithPath, type ImportDestination } from "@/utils/import-destination";
@@ -16,7 +16,8 @@ export function DestinationPicker({
   onPage,
   livePages = "ready",
   onRetryLivePages,
-  loading = false,
+  collections = "ready",
+  onRetryCollections,
   disabled = false,
 }: {
   value: ImportDestination;
@@ -29,13 +30,18 @@ export function DestinationPicker({
   /** Whether `onPage` is known yet: until it is, nothing is imported into an existing collection. */
   livePages?: "loading" | "failed" | "ready";
   onRetryLivePages?: () => void;
-  loading?: boolean;
+  /** Whether `options` is known: when it failed to load, no existing collection can be chosen. */
+  collections?: "loading" | "failed" | "ready";
+  onRetryCollections?: () => void;
   disabled?: boolean;
 }) {
   const chosen = value.kind === "existing" ? collectionWithPath(options, value.id) : null;
   // Said only once a collection is chosen: that is when Import waits on it.
   const check = value.kind === "existing" && value.id && livePages !== "ready" ? livePages : null;
   const select = useRef<HTMLSelectElement>(null);
+  const existing = useRef<HTMLInputElement>(null);
+  const noCollections = collections === "failed";
+  const failed = noCollections || check === "failed";
   return (
     <fieldset disabled={disabled}>
       <legend className="sr-only">Import into</legend>
@@ -49,8 +55,10 @@ export function DestinationPicker({
           label="An existing collection"
           checked={value.kind === "existing"}
           onSelect={() => onChange({ kind: "existing" })}
+          unavailable={noCollections}
+          inputRef={existing}
         >
-          {value.kind === "existing" && (
+          {value.kind === "existing" && !noCollections && (
             <>
             <select
               ref={select}
@@ -62,7 +70,7 @@ export function DestinationPicker({
               className="mt-2 w-full truncate rounded-xl border border-emerald-100 bg-white/85 px-3 py-2 text-left text-sm shadow-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-emerald-900/70 dark:bg-slate-950/80"
             >
               <option value="">
-                {loading ? "Loading collections…" : "Choose a collection…"}
+                {collections === "loading" ? "Loading collections…" : "Choose a collection…"}
               </option>
               {options.map((o) => (
                 <option key={o.id} value={o.id}>
@@ -86,30 +94,37 @@ export function DestinationPicker({
             </>
           )}
           {/* The status is mounted throughout, so its text is announced when it appears. */}
-          <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${check ? "mt-2" : ""}`}>
+          <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${check || noCollections ? "mt-2" : ""}`}>
             <div role="status" className="min-w-0">
-              {check && (
+              {(check || noCollections) && (
                 <p className="flex items-start gap-2 text-sm text-slate-900 dark:text-slate-100">
-                  {check === "loading" ? (
+                  {!failed ? (
                     <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 motion-safe:animate-spin dark:text-emerald-400" aria-hidden="true" />
                   ) : (
                     <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
                   )}
                   <span>
-                    {check === "loading"
-                      ? "Checking whether this collection appears on a live page…"
-                      : "Couldn’t check whether this collection appears on a live page."}
+                    {noCollections
+                      ? "Couldn’t load your collections."
+                      : check === "loading"
+                        ? "Checking whether this collection appears on a live page…"
+                        : "Couldn’t check whether this collection appears on a live page."}
                   </span>
                 </p>
               )}
             </div>
-            {check === "failed" && (
+            {failed && (
               <button
                 type="button"
                 onClick={() => {
-                  // Retry leaves with the message: the focus goes to the collection it is about.
-                  select.current?.focus();
-                  onRetryLivePages?.();
+                  // Retry leaves with the message: the focus goes to what it is about.
+                  if (noCollections) {
+                    existing.current?.focus();
+                    onRetryCollections?.();
+                  } else {
+                    select.current?.focus();
+                    onRetryLivePages?.();
+                  }
                 }}
                 className="inline-flex min-h-6 items-center rounded-full border border-neutral-300 px-3 py-1 text-sm font-semibold transition hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800"
               >
@@ -145,17 +160,24 @@ function Choice({
   label,
   checked,
   onSelect,
+  unavailable = false,
+  inputRef,
   children,
 }: {
   label: string;
   checked: boolean;
   onSelect: () => void;
+  /** Can't be chosen now. It stays focusable: the reason is said under it. */
+  unavailable?: boolean;
+  inputRef?: Ref<HTMLInputElement>;
   children?: ReactNode;
 }) {
   return (
     <div>
       <label
-        className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-2 text-sm transition ${
+        className={`flex items-center gap-3 rounded-xl border px-3 py-2 text-sm transition ${
+          unavailable ? "cursor-not-allowed" : "cursor-pointer"
+        } ${
           checked
             ? "border-emerald-300 bg-emerald-50 text-emerald-950 shadow-sm dark:border-emerald-700 dark:bg-emerald-950/50 dark:text-emerald-100"
             : "border-transparent text-slate-700 hover:bg-white/80 dark:text-slate-300 dark:hover:bg-white/5"
@@ -164,8 +186,12 @@ function Choice({
         <input
           type="radio"
           name="import-destination"
+          ref={inputRef}
           checked={checked}
-          onChange={onSelect}
+          aria-disabled={unavailable || undefined}
+          onChange={() => {
+            if (!unavailable) onSelect();
+          }}
           className="h-4 w-4 shrink-0 accent-emerald-700 dark:accent-emerald-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         />
         <span className="min-w-0 break-words font-medium">{label}</span>

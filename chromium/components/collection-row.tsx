@@ -83,14 +83,16 @@ export function CollectionRow({
           <Chevron open={node.isExpanded} />
         </span>
         <CollectionGlyph icon={node.icon} color={node.color} />
-        {/* Positioned so the visually hidden end of the name is clipped with it.
-            Cut to one line; keyboard focus on the row unwraps it. */}
+        {/* Cut to one line; keyboard focus on the row unwraps it. */}
         <span
-          className="relative min-w-0 flex-1 truncate group-focus-visible:whitespace-normal group-focus-visible:break-words"
+          className="min-w-0 flex-1 truncate group-focus-visible:whitespace-normal group-focus-visible:break-words"
           title={node.name}
         >
           {node.name}
-          <span className="sr-only">
+          {/* The spoken end of the name. Inline at zero size, not sr-only: a positioned
+              span is read with a space before its comma, and an aria-label would have
+              to repeat the visible text exactly. */}
+          <span className="text-[0px]">
             , {node.bookmarkCount} {node.bookmarkCount === 1 ? "bookmark" : "bookmarks"}
             {publishedUrl && ", published"}
           </span>

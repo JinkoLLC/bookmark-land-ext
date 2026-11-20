@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/chrome-extension";
-import { useAction, useConvexAuth, useQueries, useQuery } from "convex/react";
+import { useAction, useConvexAuth, useQueries } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
@@ -34,8 +35,13 @@ const FOCUS_RING =
   "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 const FILLED_BUTTON = `rounded-full bg-emerald-700 font-semibold text-white transition hover:bg-emerald-800 ${FOCUS_RING}`;
 
-const FEEDS = { feeds: { query: api.userPages.collectionFeeds, args: {} } };
-const NONE = {};
+const READS = {
+  plan: { query: api.subscriptions.getSubscriptionInfo, args: {} },
+  collections: { query: api.collections.list, args: {} },
+  feeds: { query: api.userPages.collectionFeeds, args: {} },
+};
+type Read = keyof typeof READS;
+const OUTLINE_BUTTON = `inline-flex min-h-6 items-center rounded-full border border-neutral-300 font-semibold transition hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800 ${FOCUS_RING}`;
 
 /**
  * Browser import wizard: preview the native bookmark tree with per-folder
@@ -167,19 +173,32 @@ function Wizard() {
   // Back from a result: "Import more" is gone, so step 1's heading takes the focus.
   const [returned, setReturned] = useState(false);
   const runImport = useAction(api.importTree.importTree);
-  // Session summary — remaining allowance for the over-limit warning.
-  const sessionSummary = useQuery(api.subscriptions.getSubscriptionInfo);
-  const collections = useQuery(api.collections.list);
   // Read with useQueries so a failed load comes back as a value (as the popup's
-  // picker does). A failed query keeps its error while subscribed: Retry drops
-  // the subscription for one render, so the client asks the server again.
-  const [feedsDropped, setFeedsDropped] = useState(false);
+  // picker does): thrown, it would replace the wizard and lose the selection or
+  // the result. A failed query keeps its error while subscribed: Retry drops
+  // that one subscription for a render, so the client asks the server again.
+  const [dropped, setDropped] = useState<Read | null>(null);
   useEffect(() => {
-    if (feedsDropped) setFeedsDropped(false);
-  }, [feedsDropped]);
-  const feeds = useQueries(feedsDropped ? NONE : FEEDS).feeds as CollectionFeed[] | Error | undefined;
+    if (dropped) setDropped(null);
+  }, [dropped]);
+  const queries = useMemo(
+    () => Object.fromEntries(Object.entries(READS).filter(([key]) => key !== dropped)),
+    [dropped],
+  );
+  const reads = useQueries(queries) as {
+    plan?: FunctionReturnType<typeof api.subscriptions.getSubscriptionInfo> | Error;
+    collections?: FunctionReturnType<typeof api.collections.list> | Error;
+    feeds?: CollectionFeed[] | Error;
+  };
+  // Session summary — remaining allowance for the over-limit warning.
+  const planFailed = reads.plan instanceof Error;
+  const sessionSummary = reads.plan instanceof Error ? undefined : reads.plan;
+  const collectionsFailed = reads.collections instanceof Error;
+  const collections = reads.collections instanceof Error ? undefined : reads.collections;
+  const { feeds } = reads;
   const livePages = feeds instanceof Error ? "failed" : feeds ? "ready" : "loading";
   const collectionFeeds = feeds instanceof Error ? undefined : feeds;
+  const importButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -220,7 +239,9 @@ function Wizard() {
   const destinationArg = destinationArgFor(destination, importedName);
   // An existing collection may be shown on a live page: no import before its notice can appear.
   // The same holds when that information failed to load.
-  const feedsPending = destination.kind === "existing" && livePages !== "ready";
+  // Nor while the collection list itself failed to load.
+  const feedsPending =
+    destination.kind === "existing" && (livePages !== "ready" || collectionsFailed);
 
   if (roots === "failed") {
     return (
@@ -262,6 +283,8 @@ function Wizard() {
 
   if (roots.length === 0) return <NoBrowserBookmarks />;
 
+  const nothingSelected = model.importableCount === 0;
+
   const toggle = (id: string) => {
     const next = new Set(excluded);
     if (next.has(id)) next.delete(id);
@@ -271,7 +294,7 @@ function Wizard() {
 
   const start = async () => {
     const arg = destinationArg;
-    if (!arg || phase === "importing" || feedsPending) return;
+    if (!arg || phase === "importing" || nothingSelected || feedsPending) return;
     setPhase("importing");
     try {
       const result = await runImport({
@@ -290,7 +313,6 @@ function Wizard() {
     }
   };
 
-  const nothingSelected = model.importableCount === 0;
   // Ticked folders can still hold nothing importable: that isn't an empty selection.
   const nothingImportable = nothingSelected && anyRootTicked(roots, excluded);
   const warning = sessionSummary
@@ -373,8 +395,9 @@ function Wizard() {
           options={options}
           onPage={livePageCounts(collectionFeeds)}
           livePages={livePages}
-          onRetryLivePages={() => setFeedsDropped(true)}
-          loading={collections === undefined}
+          onRetryLivePages={() => setDropped("feeds")}
+          collections={collectionsFailed ? "failed" : collections ? "ready" : "loading"}
+          onRetryCollections={() => setDropped("collections")}
           disabled={phase === "importing" || nothingSelected}
         />
       </Step>
@@ -395,6 +418,33 @@ function Wizard() {
             </span>
           </p>
         )}
+
+        {/* The status is mounted throughout, so its text is announced when it appears. */}
+        <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${planFailed ? "mb-3" : ""}`}>
+          <div role="status" className="min-w-0">
+            {/* The button keeps the focus while it runs, so its new label isn't read out: this is. */}
+            {phase === "importing" && <span className="sr-only">Importing…</span>}
+            {planFailed && (
+              <p className="flex items-start gap-2 text-sm text-slate-900 dark:text-slate-100">
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
+                <span>Couldn&apos;t load your plan&apos;s bookmark limit.</span>
+              </p>
+            )}
+          </div>
+          {planFailed && (
+            <button
+              type="button"
+              onClick={() => {
+                // Retry leaves with the message: the focus goes to the button it sits beside.
+                importButton.current?.focus();
+                setDropped("plan");
+              }}
+              className={`px-3 py-1 text-sm ${OUTLINE_BUTTON}`}
+            >
+              Retry
+            </button>
+          )}
+        </div>
 
         {phase === "failed" && (
           <p
@@ -420,10 +470,13 @@ function Wizard() {
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            disabled={phase === "importing" || nothingSelected || destinationArg === null || feedsPending}
+            ref={importButton}
+            // aria-disabled, not disabled: the focus stays on it through a run, so a retry
+            // after a failure is one key press. start() refuses what this greys out.
+            aria-disabled={phase === "importing" || nothingSelected || destinationArg === null || feedsPending}
             onClick={() => void start()}
             // Disabled it still says what to do, so it is greyed rather than faded.
-            className={`inline-flex max-w-full items-center justify-center gap-2 px-6 py-3 text-base shadow-lg shadow-emerald-900/20 disabled:bg-slate-200 disabled:text-slate-700 disabled:shadow-none motion-safe:enabled:hover:-translate-y-0.5 dark:disabled:bg-slate-800 dark:disabled:text-slate-200 ${FILLED_BUTTON}`}
+            className={`inline-flex max-w-full items-center justify-center gap-2 px-6 py-3 text-base shadow-lg shadow-emerald-900/20 aria-disabled:cursor-not-allowed aria-disabled:bg-slate-200 aria-disabled:text-slate-700 aria-disabled:shadow-none aria-disabled:hover:bg-slate-200 dark:aria-disabled:hover:bg-slate-800 motion-safe:not-aria-disabled:hover:-translate-y-0.5 dark:aria-disabled:bg-slate-800 dark:aria-disabled:text-slate-200 ${FILLED_BUTTON}`}
           >
             {phase === "importing" && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
             {phase === "importing"
@@ -438,7 +491,7 @@ function Wizard() {
             <button
               type="button"
               onClick={openUpgrade}
-              className={`inline-flex min-h-6 items-center rounded-full border border-neutral-300 px-4 py-2 font-semibold transition hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800 ${FOCUS_RING}`}
+              className={`px-4 py-2 ${OUTLINE_BUTTON}`}
             >
               Upgrade
             </button>
