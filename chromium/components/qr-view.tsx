@@ -1,12 +1,13 @@
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { browser } from "wxt/browser";
+import { ShortLinkMeter } from "@/components/short-link-meter";
 import { StatusLine } from "@/components/status-line";
 import { ViewHeader } from "@/components/view-header";
 import { MORE_BELOW, useScrollMore } from "@/hooks/use-scroll-more";
 import { copyText, copyWhenReady } from "@/utils/clipboard";
 import { encodeQr } from "@/utils/qr-encode";
 import { qrPng, qrSvg, svgDataUrl } from "@/utils/qr-render";
-import { addressParts } from "@/utils/short-link";
+import { addressParts, type ShortLinkUsage } from "@/utils/short-link";
 import { extractDomain } from "../shared/url";
 
 const RING =
@@ -280,6 +281,7 @@ export function QrView({
   onShortLink,
   canShorten,
   onCopied,
+  usage,
 }: {
   url: string;
   onBack: () => void;
@@ -289,6 +291,8 @@ export function QrView({
   canShorten: boolean;
   /** What a copy here put on the clipboard, for the popup's root. */
   onCopied?: (what: "image" | "address") => void;
+  /** The month's short links, shown where a short link is offered. */
+  usage?: ShortLinkUsage;
 }) {
   const matrix = useMemo(() => encodeQr(url), [url]);
   const svg = useMemo(() => matrix && qrSvg(matrix), [matrix]);
@@ -333,6 +337,7 @@ export function QrView({
                 Made in your browser. It isn&apos;t tracked and can&apos;t be changed after printing.
                 {!dense && shortLink() && <> Want scans counted? {shortLink()}</>}
               </p>
+              {usage && shortLink() && <ShortLinkMeter usage={usage} />}
             </>
           ) : (
             <>

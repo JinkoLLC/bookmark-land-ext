@@ -3,7 +3,6 @@ import { ConvexError } from "convex/values";
 import {
   NEW_SESSION,
   addressParts,
-  allowanceLine,
   clipboardLine,
   createRecordKey,
   deriveShortLinkView,
@@ -14,6 +13,7 @@ import {
   readCreateRecord,
   refusalFrom,
   refusedLocally,
+  shortLinkMeter,
   shortLinkSession,
   unfinishedSentence,
   type ShortLinkList,
@@ -94,22 +94,21 @@ describe("findShortLink", () => {
   });
 });
 
-describe("allowanceLine", () => {
-  it("counts what is left of the month, naming the plan when asked", () => {
-    expect(allowanceLine(PRO, true)).toBe("38 of 50 left this month · Pro plan");
-    expect(allowanceLine(PRO)).toBe("38 of 50 left this month");
-    expect(allowanceLine({ ...PRO, created: 60 })).toBe("0 of 50 left this month");
+describe("shortLinkMeter", () => {
+  it("counts what is used and left of the month, and how full the bar is", () => {
+    const meter = shortLinkMeter(PRO);
+    expect(meter.usedLine).toBe("12 of 50 short links used this month");
+    expect(meter.leftLine).toBe("38 left");
+    expect(meter.fill).toBe(0.24);
+    expect(meter.inUse).toBeNull();
+    // Past the allowance, the bar is full and nothing is left.
+    expect(shortLinkMeter({ ...PRO, created: 60 })).toMatchObject({ usedLine: "50 of 50 short links used this month", leftLine: "0 left", fill: 1 });
   });
 
-  it("names the cap on short links held at once one away from it, and alone once it is reached", () => {
-    expect(allowanceLine(EDU, true)).toBe("10 left this month · 24 of 25 in use");
-    // What is left of the month can't be used at the cap, so it isn't offered.
-    expect(allowanceLine({ ...EDU, held: 25 })).toBe("25 of 25 in use");
-    expect(allowanceLine({ ...EDU, tier: "free", held: 25, created: 25 })).toBe("25 of 25 in use");
+  it("names the cap on short links held at once on plans that have one", () => {
+    expect(shortLinkMeter(EDU).inUse).toBe("24 of 25 in use");
     // The server counts held up to one past the cap: the exact number isn't known.
-    expect(allowanceLine({ ...EDU, held: 26 })).toBe("More than 25 in use");
-    expect(allowanceLine({ ...EDU, held: 23 }, true)).toBe("10 of 25 left this month · Education plan");
-    expect(allowanceLine({ ...EDU, tier: "free", held: 12, created: 25 })).toBe("0 of 25 left this month");
+    expect(shortLinkMeter({ ...EDU, held: 26 }).inUse).toBe("More than 25 in use");
   });
 });
 

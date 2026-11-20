@@ -7,6 +7,7 @@ import { SIGN_IN_URL } from "@/utils/sign-in-url";
 import { ExternalLink, LogOut, PanelRight, Settings, User } from "lucide-react";
 import { FeedbackForm } from "@/components/feedback-form";
 import { QrView } from "@/components/qr-view";
+import { ShortLinkMeter } from "@/components/short-link-meter";
 import { ShortLinkView, useShortLink, type PageTab } from "@/components/short-link-view";
 import {
   getAccountFromBackground,
@@ -341,6 +342,7 @@ function SignedInView() {
               onShortLink={shortLink.open ? openShortLink : undefined}
               canShorten={!refusedLocally(tab.address)}
               onCopied={(what) => shortLink.setLastCopied({ what, url: tab.url })}
+              usage={shortLink.open ? shortLink.usage : undefined}
             />
           )}
           {view === "short" && tab && (
@@ -385,6 +387,7 @@ function SignedInView() {
                 </button>
               </div>
             )}
+            {tab && shortLink.open && shortLink.usage && <ShortLinkMeter usage={shortLink.usage} />}
             <PrivacyNote shortLinks={Boolean(tab) && shortLink.open} saved={Boolean(bookmarkId)} overflows={middle.overflows} />
           </div>
         </main>
