@@ -60,6 +60,13 @@ export interface PickerRow {
 
 /** The picker's flat rows: Unsorted first, then the collections in tree order,
  * each nested one with its parent path (which tells same-named ones apart). */
+/** The filter text as a new collection's name, or null when it is empty or a collection already has it. */
+export function newCollectionName(rows: PickerRow[], filter: string): string | null {
+  const name = filter.trim();
+  if (!name) return null;
+  return rows.some((row) => row.name.toLowerCase() === name.toLowerCase()) ? null : name;
+}
+
 export function pickerRows(collections: CollectionLike[]): PickerRow[] {
   const byId = new Map(collections.map((c) => [c._id, c]));
   const pathOf = (id: string) => {

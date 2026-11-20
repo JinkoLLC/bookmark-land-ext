@@ -3,11 +3,12 @@ import { useMutation, useQueries, useQuery } from "convex/react";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
 import { ConvexError } from "convex/values";
-import { Check, ChevronDown, Globe, Star, X } from "lucide-react";
+import { Check, ChevronDown, Globe, Plus, Star, X } from "lucide-react";
 import {
   filterPickerRows,
   inputAfterTagSaved,
   livePageCounts,
+  newCollectionName,
   ON_PUBLIC_PAGE,
   pageFeedNote,
   pickerRows,
@@ -127,6 +128,8 @@ function CollectionPicker({
 }) {
   const collections = useQuery(api.collections.list);
   const move = useMutation(api.bookmarkMutations.moveToCollection);
+  const createCollection = useMutation(api.collectionMutations.create);
+  const [creating, setCreating] = useState(false);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   /** Highlighted row, as an index into `rows`; -1 = none. */
@@ -149,6 +152,7 @@ function CollectionPicker({
   const all = pickerRows(collections ?? []);
   const rows = filterPickerRows(all, filter);
   const selected = all.find((row) => row.id === collectionId) ?? all[0];
+  const newName = newCollectionName(all, filter);
   // What is saved into a collection on a live page is public, so a collection
   // can't be chosen before we know (and can show) whether one is. Unsorted
   // is never on a page.
@@ -211,6 +215,30 @@ function CollectionPicker({
     }
   };
 
+  /** Makes the filter text a collection (inside `parentId` when given) and moves the bookmark into it. */
+  const create = async (parentId?: Id<"collections">) => {
+    if (!newName || creating) return;
+    setCreating(true);
+    onError(null);
+    let id: Id<"collections">;
+    try {
+      id = await createCollection({ name: newName, parentId });
+    } catch (error) {
+      console.error("[extension] Create collection failed", error);
+      onError(error instanceof ConvexError && typeof error.data === "string" ? error.data : "Couldn't create the collection. Try again.");
+      setCreating(false);
+      return;
+    }
+    setCreating(false);
+    close();
+    try {
+      await move({ id: bookmarkId, collectionId: id });
+    } catch (error) {
+      console.error("[extension] Move to collection failed", error);
+      onError(`Created "${newName}", but couldn't move the bookmark into it. Choose it to try again.`);
+    }
+  };
+
   const onFieldKey = (event: React.KeyboardEvent) => {
     // A key the input method takes (Enter accepting a candidate above all) never chooses a row: a choice can make the bookmark public.
     if (isComposing(event.nativeEvent)) return;
@@ -222,6 +250,7 @@ function CollectionPicker({
       event.preventDefault();
       const row = rows[active];
       if (row && canChoose(row)) void choose(row);
+      else if (rows.length === 0) void create();
     } else if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       event.preventDefault();
       const choosable = rows.flatMap((row, i) => (canChoose(row) ? [i] : []));
@@ -279,7 +308,7 @@ function CollectionPicker({
               setActive(filterPickerRows(all, event.target.value).findIndex(canChoose));
             }}
             onKeyDown={onFieldKey}
-            placeholder="Filter collections"
+            placeholder="Filter or name a new collection"
             // The ring is drawn inside: outside it would stick out past the panel's border and over the row below.
             className="shrink-0 rounded-md bg-transparent px-2 py-1.5 placeholder:text-neutral-500 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring dark:placeholder:text-neutral-400"
           />
@@ -356,6 +385,38 @@ function CollectionPicker({
               </div>
             ))}
           </div>
+          {newName && (
+            <div className="flex shrink-0 flex-col gap-0.5 border-t border-neutral-200 p-1 dark:border-neutral-800">
+              <button
+                type="button"
+                disabled={creating}
+                onClick={() => void create()}
+                className={`flex items-start gap-2 rounded px-2 py-1 text-left hover:bg-neutral-100 disabled:opacity-60 dark:hover:bg-neutral-800 ${RING}`}
+              >
+                <Plus className="mt-[3px] h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span className="min-w-0 break-words">New collection &ldquo;{newName}&rdquo;</span>
+              </button>
+              {/* Inside the bookmark's collection, once we know whether that one is public. */}
+              {selected.id && live.state === "ready" && (
+                <button
+                  type="button"
+                  disabled={creating}
+                  onClick={() => void create(selected.id as Id<"collections">)}
+                  className={`flex items-start gap-2 rounded px-2 py-1 text-left hover:bg-neutral-100 disabled:opacity-60 dark:hover:bg-neutral-800 ${RING}`}
+                >
+                  <Plus className="mt-[3px] h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                  <span className="min-w-0 break-words">
+                    New subcollection &ldquo;{newName}&rdquo; in {selected.name}
+                  </span>
+                </button>
+              )}
+              {creating && (
+                <p role="status" className={`px-2 text-xs ${MUTED}`}>
+                  Creating…
+                </p>
+              )}
+            </div>
+          )}
         </div>
       )}
     </>
