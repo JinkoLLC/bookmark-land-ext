@@ -80,7 +80,7 @@ export function PendingErrorBanner() {
       setPending(next);
       setRetryFailed(next.kind !== "limit");
       void stillShown(url)
-        .then((same) => same && browser.storage.session.set({ [PENDING_ERROR_KEY]: next }))
+        .then((same) => (same ? browser.storage.session.set({ [PENDING_ERROR_KEY]: next }) : undefined))
         .catch(() => {});
     } finally {
       setRetrying(false);
