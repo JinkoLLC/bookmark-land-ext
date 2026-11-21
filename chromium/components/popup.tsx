@@ -495,10 +495,10 @@ function PrivacyNote({
             aria-expanded={open}
             onClick={() => setOpen(!open)}
             // In running text: 24 px tall, and the margins keep the line from growing with it.
-            className={`-my-1 inline-flex min-h-6 items-center ${link}`}
+            className={`-my-1 inline-flex min-h-6 items-center gap-1 ${link}`}
           >
             {open ? "Less" : "More"}
-            {/* Alone on the line, the button says what it is about in full. */}
+            {/* Alone on the line, the button says what it is about in full. The gap is the space: a flex item drops its leading one. */}
             <span className={brief && !open ? "" : "sr-only"}> about what is checked</span>
           </button>
           <span aria-hidden="true"> · </span>
