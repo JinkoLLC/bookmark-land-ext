@@ -44,9 +44,16 @@ export function PendingErrorBanner() {
       });
   }, []);
 
+  /** Whether storage still holds the record this banner shows: a later failed save may have replaced it. */
+  const stillShown = async (url: string) => {
+    const items: Record<string, unknown> = await browser.storage.session.get(PENDING_ERROR_KEY);
+    const value = items[PENDING_ERROR_KEY];
+    return isPendingSilentError(value) && value.url === url;
+  };
+
   const clear = async () => {
     dismissed.current = true;
-    await browser.storage.session.remove(PENDING_ERROR_KEY);
+    if (pending && (await stillShown(pending.url))) await browser.storage.session.remove(PENDING_ERROR_KEY);
     // The banner goes with the button that has focus: the popup's first control after it takes it.
     const box = banner.current;
     if (box?.contains(document.activeElement)) {
@@ -72,7 +79,9 @@ export function PendingErrorBanner() {
       const next = pendingErrorFrom(url, error);
       setPending(next);
       setRetryFailed(next.kind !== "limit");
-      void browser.storage.session.set({ [PENDING_ERROR_KEY]: next }).catch(() => {});
+      void stillShown(url)
+        .then((same) => same && browser.storage.session.set({ [PENDING_ERROR_KEY]: next }))
+        .catch(() => {});
     } finally {
       setRetrying(false);
     }
