@@ -46,7 +46,25 @@ _Avoid_: Undelete, recover
 
 **Permanently delete**:
 Erase a bookmark for good. Not reversible, and requires the `destructive` scope.
-_Avoid_: Delete (unqualified), purge, destroy
+_Avoid_: Delete (unqualified, for a bookmark; a short link is deleted, see **Delete (a short link)**), purge, destroy
+
+### Short links
+
+**Short link**:
+A `bkmk.to/<ending>` address that redirects to a destination. Creating one uses the month's allowance.
+_Avoid_: Link (alone), short URL
+
+**Tracked QR code**:
+The QR code of a short link. Scans are counted, and it can be repointed by changing the short link's destination.
+_Avoid_: Dynamic QR
+
+**QR code**:
+A plain QR code of an address, made in the browser. It is not tracked and stores nothing.
+_Avoid_: Static QR
+
+**Delete (a short link)**:
+Erase a short link for good. The month's allowance is not given back. It is the web app's own word; Remove and Trash apply to bookmarks and collections only.
+_Avoid_: Remove, trash (for a short link)
 
 ### Extension
 

@@ -9,10 +9,12 @@ import { isSaveableUrl } from "./quick-save";
  *   Collections; subfolders become subcollections.
  * - Loose bookmarks sitting directly on a root are gathered into a synthetic
  *   collection named after that root.
- * - Non-web schemes are excluded upfront and counted.
+ * - Non-web schemes and overlong web addresses are excluded upfront and
+ *   counted, each on its own.
  * - Folders nested beyond the 5-level collection limit don't become
  *   collections; their bookmarks merge into the deepest ancestor within the
- *   limit (depth 4). The preview marks those folders as merged.
+ *   limit (depth 4). The preview marks those folders as merged and names
+ *   where each one's bookmarks go.
  * - Excluding a folder (or root) excludes its entire subtree.
  * - Bookmarks are emitted in the tree's depth-first order — the order the
  *   allowance is consumed in.
@@ -43,10 +45,23 @@ export interface ImportModel {
   bookmarks: PayloadBookmark[];
   importableCount: number;
   excludedSchemeCount: number;
+  /** Web addresses the library can't hold: longer than a saveable address. */
+  excludedTooLongCount: number;
   /** Folder ids (native) beyond the depth limit, merged into an ancestor —
    * the preview marks these. */
   mergedFolderIds: string[];
+  /** For each merged folder id, the name of where its bookmarks go: the
+   * nearest kept folder above it, or the destination collection. */
+  mergedInto: Record<string, string>;
 }
+
+/** No folder becomes a collection: every one merges into the destination itself. */
+export const allFoldersMerge = (model: ImportModel) =>
+  model.folders.length === 0 && model.mergedFolderIds.length > 0;
+
+/** A ticked root means the selection isn't empty: its folders can only be unticked one by one under it. */
+export const anyRootTicked = (roots: NativeNode[], excludedIds: ReadonlySet<string>) =>
+  roots.some((root) => !excludedIds.has(root.id));
 
 const MAX_DEPTH = 5; // collections may nest 5 levels: depths 0..4
 
@@ -58,21 +73,31 @@ const MAX_DEPTH = 5; // collections may nest 5 levels: depths 0..4
  * `baseDepth` is the collection depth at which imported top-level folders
  * would sit (0 = library root; 1 = inside a top-level destination
  * collection; …). Folders that would land beyond the limit merge exactly
- * like over-deep folders do.
+ * like over-deep folders do. `destinationName` names the target of a folder
+ * that has no kept folder above it.
  */
 export function buildImportModel(
   roots: NativeNode[],
   excludedIds: ReadonlySet<string>,
   baseDepth = 0,
+  destinationName = "the destination collection",
 ): ImportModel {
   const folders: PayloadFolder[] = [];
   const bookmarks: PayloadBookmark[] = [];
   const mergedFolderIds: string[] = [];
+  const mergedInto: Record<string, string> = {};
   let excludedSchemeCount = 0;
+  let excludedTooLongCount = 0;
+
+  // A web address that isn't saveable can only be over the length limit.
+  const countExcluded = (url: string | undefined) => {
+    if (/^https?:\/\//.test(url ?? "")) excludedTooLongCount += 1;
+    else excludedSchemeCount += 1;
+  };
 
   const emitBookmark = (node: NativeNode, folderKey: string | undefined) => {
     if (!isSaveableUrl(node.url)) {
-      excludedSchemeCount += 1;
+      countExcluded(node.url);
       return;
     }
     bookmarks.push({
@@ -83,35 +108,31 @@ export function buildImportModel(
   };
 
   // depth = collection depth the folder WOULD get (top-level folder = 0).
-  // ancestry = payload keys of within-limit ancestors, nearest last.
+  // nearest = the closest within-limit ancestor (none: the destination itself).
   const walkFolder = (
     node: NativeNode,
     parentKey: string | undefined,
     depth: number,
-    nearestWithinLimitKey: string | undefined,
+    nearest: PayloadFolder | undefined,
   ) => {
     if (excludedIds.has(node.id)) return;
 
     const withinLimit = baseDepth + depth < MAX_DEPTH;
-    let ownKey: string | undefined;
+    let own = nearest;
     if (withinLimit) {
-      ownKey = node.id;
-      folders.push({ key: ownKey, name: node.title || "Untitled", parentKey });
+      own = { key: node.id, name: node.title || "Untitled", parentKey };
+      folders.push(own);
     } else {
       mergedFolderIds.push(node.id);
-      ownKey = nearestWithinLimitKey;
+      mergedInto[node.id] = nearest?.name ?? destinationName;
     }
+    const ownKey = own?.key;
 
     for (const child of node.children ?? []) {
       if (child.url !== undefined) {
         emitBookmark(child, ownKey);
       } else {
-        walkFolder(
-          child,
-          withinLimit ? ownKey : nearestWithinLimitKey,
-          depth + 1,
-          withinLimit ? ownKey : nearestWithinLimitKey,
-        );
+        walkFolder(child, ownKey, depth + 1, own);
       }
     }
   };
@@ -132,6 +153,7 @@ export function buildImportModel(
         if (!rootMarkedMerged) {
           rootMarkedMerged = true;
           mergedFolderIds.push(root.id);
+          mergedInto[root.id] = destinationName;
         }
         return undefined;
       }
@@ -148,7 +170,7 @@ export function buildImportModel(
     for (const child of children) {
       if (child.url !== undefined) {
         if (!isSaveableUrl(child.url)) {
-          excludedSchemeCount += 1;
+          countExcluded(child.url);
           continue;
         }
         emitBookmark(child, ensureRootFolder());
@@ -163,6 +185,8 @@ export function buildImportModel(
     bookmarks,
     importableCount: bookmarks.length,
     excludedSchemeCount,
+    excludedTooLongCount,
     mergedFolderIds,
+    mergedInto,
   };
 }

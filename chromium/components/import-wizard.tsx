@@ -1,12 +1,15 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAuth } from "@clerk/chrome-extension";
-import { useAction, useConvexAuth, useQuery } from "convex/react";
+import { useAction, useConvexAuth, useQueries } from "convex/react";
+import type { FunctionReturnType } from "convex/server";
 import { api } from "@convex/api";
 import type { Id } from "@convex/dataModel";
 import { browser } from "wxt/browser";
 import { SIGN_IN_URL } from "@/utils/sign-in-url";
-import { FolderOpen, Leaf, Loader2 } from "lucide-react";
+import { CircleAlert, FolderOpen, Leaf, Loader2 } from "lucide-react";
 import {
+  allFoldersMerge,
+  anyRootTicked,
   buildImportModel,
   type NativeNode,
 } from "@/utils/import-tree";
@@ -14,9 +17,12 @@ import {
   DEFAULT_DESTINATION,
   destinationArgFor,
   destinationBaseDepth,
+  destinationName as destinationNameFor,
+  importedCollectionName,
+  importReadiness,
   type ImportDestination,
 } from "@/utils/import-destination";
-import { buildCollectionOptions, livePageCounts } from "@/utils/organize";
+import { buildCollectionOptions, livePageCounts, type CollectionFeed } from "@/utils/organize";
 import { derivePopupAuthState } from "@/utils/popup-state";
 import { useStalled } from "@/hooks/use-stalled";
 import { allowanceWarningFor } from "@/utils/allowance";
@@ -24,9 +30,20 @@ import { DestinationPicker } from "@/components/import-destination";
 import { FolderNode, FolderCheckbox } from "@/components/import-folders";
 import { AuthStalled } from "@/components/auth-stalled";
 import { ImportComplete } from "@/components/import-complete";
-import type { ImportResult } from "@/utils/import-result";
+import { formatCount, reachedPlanLimit, type ImportResult } from "@/utils/import-result";
 import { parseReturnTabId } from "@/utils/setup-return";
 
+const FOCUS_RING =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
+const FILLED_BUTTON = `rounded-full bg-emerald-700 font-semibold text-white transition hover:bg-emerald-800 ${FOCUS_RING}`;
+
+const READS = {
+  plan: { query: api.subscriptions.getSubscriptionInfo, args: {} },
+  collections: { query: api.collections.list, args: {} },
+  feeds: { query: api.userPages.collectionFeeds, args: {} },
+};
+type Read = keyof typeof READS;
+const OUTLINE_BUTTON = `inline-flex min-h-6 items-center rounded-full border border-neutral-300 font-semibold transition hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-800 ${FOCUS_RING}`;
 
 /**
  * Browser import wizard: preview the native bookmark tree with per-folder
@@ -54,8 +71,9 @@ export function ImportWizard() {
       <ImportLandscape />
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-6xl items-start px-4 py-8 sm:px-6 lg:items-center lg:py-12">
-        <section className="grid w-full gap-5 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="flex flex-col justify-between rounded-3xl border border-white/50 bg-white/35 p-6 shadow-2xl shadow-emerald-950/10 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/35 dark:shadow-black/30">
+        <section className="grid w-full grid-cols-1 gap-5 lg:grid-cols-[0.85fr_1.15fr]">
+          {/* Sized to its text and cards, top-aligned: stretched to the other column it left a tall gap. */}
+          <div className="min-w-0 rounded-3xl lg:self-start border border-white/50 bg-white/35 p-6 shadow-2xl shadow-emerald-950/10 backdrop-blur-md dark:border-white/10 dark:bg-slate-950/35 dark:shadow-black/30">
             <div>
               <div className="mb-5 inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-white/75 px-4 py-2 text-xs font-semibold text-emerald-800 shadow-sm backdrop-blur dark:border-emerald-700/60 dark:bg-emerald-950/60 dark:text-emerald-200">
                 <Leaf className="h-3.5 w-3.5" />
@@ -64,21 +82,24 @@ export function ImportWizard() {
               <h1 className="text-3xl font-extrabold tracking-tight text-sky-950 drop-shadow-sm sm:text-4xl dark:text-sky-50">
                 Import browser bookmarks
               </h1>
-              <p className="mt-4 max-w-md text-sm leading-6 text-sky-900/80 dark:text-sky-100/75">
+              <p className="mt-4 max-w-md text-sm leading-6 text-sky-950 dark:text-sky-100">
                 Bring your folders over as bookmark.land collections. Re-runs
                 are safe, duplicates are skipped, and your browser bookmarks
                 are never modified.
               </p>
             </div>
 
-            <div className="mt-8 grid gap-3 text-sm text-slate-700 dark:text-slate-200">
+            {/* In one column the three cards would push step 1 or the result down the page;
+                the intro above already covers them. */}
+            <div className="mt-8 hidden gap-3 text-sm text-slate-700 lg:grid dark:text-slate-200">
               <ImportPromise icon="🌲" title="Folders stay organized" />
               <ImportPromise icon="⛰️" title="Deep trees flatten safely" />
               <ImportPromise icon="✨" title="No duplicates on re-import" />
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/70 bg-white/85 p-4 shadow-2xl shadow-emerald-950/15 backdrop-blur-xl sm:p-5 dark:border-white/10 dark:bg-slate-950/80 dark:shadow-black/40">
+          {/* The result is short: its card sizes to it instead of stretching to the intro's height. */}
+          <div className="min-w-0 has-[[data-import-result]]:self-start rounded-3xl border border-white/70 bg-white/85 p-4 shadow-2xl shadow-emerald-950/15 backdrop-blur-xl sm:p-5 dark:border-white/10 dark:bg-slate-950/80 dark:shadow-black/40">
             {state === "loading" && <LoadingPanel />}
             {state === "stalled" && <AuthStalled />}
             {state === "signed-out" && <SignedOut />}
@@ -104,7 +125,7 @@ function ImportPromise({ icon, title }: { icon: string; title: string }) {
 function LoadingPanel() {
   return (
     <div className="flex min-h-48 flex-col items-center justify-center gap-3 text-center text-slate-600 dark:text-slate-300">
-      <Loader2 className="h-6 w-6 animate-spin text-emerald-600" />
+      <Loader2 className="h-6 w-6 text-emerald-600 motion-safe:animate-spin" aria-hidden="true" />
       <p>Loading your bookmark.land session…</p>
     </div>
   );
@@ -126,7 +147,7 @@ function SignedOut() {
             url: SIGN_IN_URL,
           })
         }
-        className="self-start rounded-full bg-emerald-600 px-4 py-2 font-semibold text-white shadow-sm shadow-emerald-900/20 transition hover:-translate-y-0.5 hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-ring"
+        className={`self-start px-4 py-2 shadow-sm shadow-emerald-900/20 ${FILLED_BUTTON}`}
       >
         Sign in to bookmark.land
       </button>
@@ -135,19 +156,51 @@ function SignedOut() {
 }
 
 function Wizard() {
-  const [roots, setRoots] = useState<NativeNode[] | null>(null);
+  // "failed": the browser refused the read, which is not the same as having no bookmarks.
+  const [roots, setRoots] = useState<NativeNode[] | "failed" | null>(null);
+  const [readAttempt, setReadAttempt] = useState(0);
   const [excluded, setExcluded] = useState<ReadonlySet<string>>(new Set());
   const [destination, setDestination] =
     useState<ImportDestination>(DEFAULT_DESTINATION);
+  // Made once per run: the label, the merge lines and the import use the same name.
+  const [importedName, setImportedName] = useState(() => importedCollectionName(new Date()));
   const [phase, setPhase] = useState<"preview" | "importing" | "done" | "failed">(
     "preview",
   );
-  const [summary, setSummary] = useState<ImportResult | null>(null);
+  // The result with the bookmarks that were sent for it: the selection can change afterwards.
+  const [summary, setSummary] = useState<{
+    result: ImportResult;
+    sent: { url: string; title?: string }[];
+  } | null>(null);
+  // Back from a result: "Import more" is gone, so step 1's heading takes the focus.
+  const [returned, setReturned] = useState(false);
   const runImport = useAction(api.importTree.importTree);
+  // Read with useQueries so a failed load comes back as a value (as the popup's
+  // picker does): thrown, it would replace the wizard and lose the selection or
+  // the result. A failed query keeps its error while subscribed: Retry drops
+  // that one subscription for a render, so the client asks the server again.
+  const [dropped, setDropped] = useState<Read | null>(null);
+  useEffect(() => {
+    if (dropped) setDropped(null);
+  }, [dropped]);
+  const queries = useMemo(
+    () => Object.fromEntries(Object.entries(READS).filter(([key]) => key !== dropped)),
+    [dropped],
+  );
+  const reads = useQueries(queries) as {
+    plan?: FunctionReturnType<typeof api.subscriptions.getSubscriptionInfo> | Error;
+    collections?: FunctionReturnType<typeof api.collections.list> | Error;
+    feeds?: CollectionFeed[] | Error;
+  };
   // Session summary — remaining allowance for the over-limit warning.
-  const sessionSummary = useQuery(api.subscriptions.getSubscriptionInfo);
-  const collections = useQuery(api.collections.list);
-  const collectionFeeds = useQuery(api.userPages.collectionFeeds);
+  const planFailed = reads.plan instanceof Error;
+  const sessionSummary = reads.plan instanceof Error ? undefined : reads.plan;
+  const collectionsFailed = reads.collections instanceof Error;
+  const collections = reads.collections instanceof Error ? undefined : reads.collections;
+  const { feeds } = reads;
+  const livePages = feeds instanceof Error ? "failed" : feeds ? "ready" : "loading";
+  const collectionFeeds = feeds instanceof Error ? undefined : feeds;
+  const importButton = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -159,13 +212,13 @@ function Wizard() {
         setRoots(children.filter((r) => (r.children ?? []).length > 0));
       } catch (error) {
         console.error("[extension] Failed to read browser bookmarks", error);
-        if (!cancelled) setRoots([]);
+        if (!cancelled) setRoots("failed");
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [readAttempt]);
 
   const options = useMemo(
     () => buildCollectionOptions(collections ?? []),
@@ -176,19 +229,38 @@ function Wizard() {
     destination,
     (id) => options.find((o) => o.id === id)?.depth,
   );
+  // Named for the folders that merge straight into the destination.
+  const destinationName = destinationNameFor(destination, importedName, options);
   const model = useMemo(
-    () => (roots ? buildImportModel(roots, excluded, baseDepth) : null),
-    [roots, excluded, baseDepth],
+    () =>
+      Array.isArray(roots)
+        ? buildImportModel(roots, excluded, baseDepth, destinationName)
+        : null,
+    [roots, excluded, baseDepth, destinationName],
   );
-  const merged = useMemo(() => new Set(model?.mergedFolderIds), [model]);
-  const destinationArg = destinationArgFor(destination);
-  // An existing collection may be shown on a live page: no import before its notice can appear.
-  const feedsPending = destination.kind === "existing" && collectionFeeds === undefined;
+  const destinationArg = destinationArgFor(destination, importedName);
+  // A completed read without the chosen collection: the choice is cleared, and step 3 says why.
+  useEffect(() => {
+    if (destination.kind === "existing" && destination.id && collections && !options.some((o) => o.id === destination.id)) {
+      setDestination({ kind: "existing", gone: true });
+    }
+  }, [destination, collections, options]);
+
+  if (roots === "failed") {
+    return (
+      <BrowserReadFailed
+        onRetry={() => {
+          setRoots(null);
+          setReadAttempt((n) => n + 1);
+        }}
+      />
+    );
+  }
 
   if (!roots || !model) {
     return (
       <div className="flex min-h-56 flex-col items-center justify-center gap-3 text-center text-slate-600 dark:text-slate-300">
-        <FolderOpen className="h-7 w-7 text-emerald-600" />
+        <FolderOpen className="h-7 w-7 text-emerald-600" aria-hidden="true" />
         <p>Reading your browser bookmark folders…</p>
       </div>
     );
@@ -197,11 +269,15 @@ function Wizard() {
   if (phase === "done" && summary) {
     return (
       <ImportComplete
-        result={summary}
-        sample={model.bookmarks}
+        result={summary.result}
+        sample={summary.sent}
+        planLimit={reachedPlanLimit(summary.result, sessionSummary)}
         returnTabId={parseReturnTabId(window.location.search)}
         onImportMore={() => {
+          // The next run gets its own collection.
+          setImportedName(importedCollectionName(new Date()));
           setSummary(null);
+          setReturned(true);
           setPhase("preview");
         }}
       />
@@ -209,6 +285,8 @@ function Wizard() {
   }
 
   if (roots.length === 0) return <NoBrowserBookmarks />;
+
+  const nothingSelected = model.importableCount === 0;
 
   const toggle = (id: string) => {
     const next = new Set(excluded);
@@ -218,9 +296,8 @@ function Wizard() {
   };
 
   const start = async () => {
-    // Re-derived so the default collection is named after the click.
-    const arg = destinationArgFor(destination, new Date());
-    if (!arg || phase === "importing" || feedsPending) return;
+    const arg = destinationArg;
+    if (!arg || phase === "importing" || !readiness.ready) return;
     setPhase("importing");
     try {
       const result = await runImport({
@@ -231,7 +308,7 @@ function Wizard() {
             ? { type: "collection", id: arg.id as Id<"collections"> }
             : arg,
       });
-      setSummary(result);
+      setSummary({ result, sent: model.bookmarks });
       setPhase("done");
     } catch (error) {
       console.error("[extension] Browser import failed", error);
@@ -239,7 +316,17 @@ function Wizard() {
     }
   };
 
-  const nothingSelected = model.importableCount === 0;
+  // Ticked folders can still hold nothing importable: that isn't an empty selection.
+  const nothingImportable = nothingSelected && anyRootTicked(roots, excluded);
+  const collectionsState = collectionsFailed ? "failed" : collections ? "ready" : "loading";
+  // The button's state, the reason beside it and start()'s guard all come from this.
+  const readiness = importReadiness({
+    destination,
+    collections: collectionsState === "ready" ? options : collectionsState,
+    livePages,
+    plan: planFailed ? "failed" : sessionSummary ? "ready" : "loading",
+    selection: nothingImportable ? "nothing-importable" : nothingSelected ? "none" : "some",
+  });
   const warning = sessionSummary
     ? allowanceWarningFor(
         model.importableCount,
@@ -248,10 +335,31 @@ function Wizard() {
       )
     : null;
 
+  const count = formatCount(model.importableCount);
+  // One target for every folder: the notice names it once and the rows stay bare.
+  const allMerge = allFoldersMerge(model);
+  const mergedRows = allMerge ? {} : model.mergedInto;
+  const openUpgrade = () =>
+    void browser.tabs.create({ url: `${import.meta.env.WXT_WEB_APP_URL}/settings` });
+
   return (
     <div className="flex flex-col gap-4">
-      <Step number={1} title="Choose folders to import" hint="Untick anything you want to leave behind.">
-        <div className="max-h-[26rem] space-y-2 overflow-y-auto pr-1">
+      <Step number={1} title="Choose folders to import" hint="Untick anything you want to leave behind." focusTitle={returned}>
+        {model.mergedFolderIds.length > 0 && (
+          <p className="mb-2 break-words text-sm text-slate-700 dark:text-slate-200">
+            {allMerge
+              ? `All folders merge into ${destinationName}: collections nest up to five levels.`
+              : "Collections nest up to five levels. A folder that says ‘merges into…’ goes into the nearest collection above it."}
+          </p>
+        )}
+        {/* p-1: room for the checkboxes' focus ring inside the scroll box.
+            Below md the list has no cap: only the page scrolls. */}
+        {/* Locked while importing, like the destination: the selection was already sent. */}
+        <fieldset
+          disabled={phase === "importing"}
+          aria-labelledby="import-step-1"
+          className="min-w-0 space-y-2 p-1 md:max-h-[26rem] md:overflow-y-auto"
+        >
           {roots.map((root) => (
             <section
               key={root.id}
@@ -264,7 +372,7 @@ function Wizard() {
                 parentExcluded={false}
                 onToggle={toggle}
                 bold
-                mergedNote={merged.has(root.id)}
+                mergesInto={mergedRows[root.id]}
               />
               <div className="mt-1">
                 {(root.children ?? [])
@@ -276,118 +384,197 @@ function Wizard() {
                       depth={1}
                       excluded={excluded}
                       parentExcluded={excluded.has(root.id)}
-                      merged={merged}
+                      merged={mergedRows}
                       onToggle={toggle}
                     />
                   ))}
               </div>
             </section>
           ))}
-        </div>
+        </fieldset>
       </Step>
 
       <Step
         number={2}
         title="Import into"
-        hint="Your folders become collections inside it."
+        hint="Choose where to import these bookmarks."
         dimmed={nothingSelected}
       >
         <DestinationPicker
           value={destination}
           onChange={setDestination}
+          importedName={importedName}
           options={options}
           onPage={livePageCounts(collectionFeeds)}
-          loading={collections === undefined}
+          livePages={livePages}
+          onRetryLivePages={() => setDropped("feeds")}
+          collections={collectionsState}
+          onRetryCollections={() => setDropped("collections")}
           disabled={phase === "importing" || nothingSelected}
         />
       </Step>
 
       <Step number={3} title="Start the import" dimmed={nothingSelected}>
         {warning && (
-          <div className="mb-3 flex flex-col gap-2 rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-amber-950 shadow-sm dark:border-amber-700 dark:bg-amber-950/35 dark:text-amber-100">
-            <p className="font-semibold">
-              Your plan allows {warning.remaining} more bookmarks, but{" "}
-              {model.importableCount} are selected.
-            </p>
-            <p className="text-sm text-amber-900/75 dark:text-amber-100/75">
-              The import will add the first {warning.willImport} (in the order
-              they appear in your browser tree) and skip the remaining{" "}
-              {warning.willSkip}. Already-saved bookmarks and restores from
-              Trash don&apos;t consume additional allowance.
-            </p>
-            <button
-              type="button"
-              onClick={() =>
-                void browser.tabs.create({
-                  url: `${import.meta.env.WXT_WEB_APP_URL}/settings`,
-                })
-              }
-              className="self-start rounded-full bg-amber-500 px-3 py-1.5 font-semibold text-white transition hover:bg-amber-400"
-            >
-              Upgrade for unlimited bookmarks
-            </button>
-          </div>
-        )}
-
-        {phase === "failed" && (
-          <p className="mb-3 rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm font-medium text-red-700 dark:border-red-900/70 dark:bg-red-950/30 dark:text-red-300">
-            Import failed — nothing may have been written. You can safely try
-            again; re-runs never duplicate.
+          <p
+            role="status"
+            className="mb-3 flex items-start gap-2 rounded-2xl border border-amber-300 bg-amber-50/90 p-4 text-sm text-slate-900 shadow-sm dark:border-amber-700 dark:bg-amber-950/35 dark:text-slate-100"
+          >
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+            <span>
+              Your plan has room for {formatCount(warning.remaining)} more bookmark
+              {warning.remaining === 1 ? "" : "s"}, and {count}{" "}
+              {model.importableCount === 1 ? "is" : "are"} selected. Bookmarks
+              already in your library or in its Trash don&apos;t use room; the
+              rest are imported until it runs out.
+            </span>
           </p>
         )}
 
-        <button
-          type="button"
-          disabled={phase === "importing" || nothingSelected || destinationArg === null || feedsPending}
-          onClick={() => void start()}
-          className="inline-flex items-center justify-center gap-2 rounded-full bg-emerald-600 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:-translate-y-0.5 hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-ring disabled:translate-y-0 disabled:opacity-50"
-        >
-          {phase === "importing" && <Loader2 className="h-4 w-4 animate-spin" />}
-          {phase === "importing"
-            ? "Importing…"
-            : nothingSelected
-              ? "Select at least one folder"
-              : `Import ${model.importableCount} bookmark${model.importableCount === 1 ? "" : "s"}`}
-        </button>
+        {/* The status is mounted throughout, so its text is announced when it appears. */}
+        <div className={`flex flex-wrap items-center gap-x-3 gap-y-1.5 ${planFailed ? "mb-3" : ""}`}>
+          <div role="status" className="min-w-0">
+            {/* The button keeps the focus while it runs, so its new label isn't read out: this is. */}
+            {phase === "importing" && <span className="sr-only">Importing…</span>}
+            {planFailed && (
+              <p className="flex items-start gap-2 text-sm text-slate-900 dark:text-slate-100">
+                <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
+                <span>Couldn&apos;t load your plan&apos;s bookmark limit.</span>
+              </p>
+            )}
+          </div>
+          {planFailed && (
+            <button
+              type="button"
+              onClick={() => {
+                // Retry leaves with the message: the focus goes to the button it sits beside.
+                importButton.current?.focus();
+                setDropped("plan");
+              }}
+              className={`px-3 py-1 text-sm ${OUTLINE_BUTTON}`}
+            >
+              Retry
+            </button>
+          )}
+        </div>
+
+        {phase === "failed" && (
+          <p
+            role="alert"
+            className="mb-3 flex items-start gap-2 rounded-2xl border border-red-200 bg-red-50/80 px-4 py-3 text-sm font-medium text-slate-900 dark:border-red-900/70 dark:bg-red-950/30 dark:text-slate-100"
+          >
+            <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-red-600 dark:text-red-400" aria-hidden="true" />
+            <span>
+              The import didn&apos;t finish, and we couldn&apos;t confirm what was
+              saved. Run it again: bookmarks already in your library are
+              skipped.
+            </span>
+          </p>
+        )}
+
+        <div className="flex flex-wrap items-center gap-3">
+          <button
+            type="button"
+            ref={importButton}
+            // aria-disabled, not disabled: the focus stays on it through a run, so a retry
+            // after a failure is one key press. start() refuses what this greys out.
+            aria-disabled={phase === "importing" || !readiness.ready}
+            onClick={() => void start()}
+            // Disabled it still says what to do, so it is greyed rather than faded.
+            className={`inline-flex max-w-full items-center justify-center gap-2 px-6 py-3 text-base shadow-lg shadow-emerald-900/20 aria-disabled:cursor-not-allowed aria-disabled:bg-slate-200 aria-disabled:text-slate-700 aria-disabled:shadow-none aria-disabled:hover:bg-slate-200 dark:aria-disabled:hover:bg-slate-800 motion-safe:not-aria-disabled:hover:-translate-y-0.5 dark:aria-disabled:bg-slate-800 dark:aria-disabled:text-slate-200 ${FILLED_BUTTON}`}
+          >
+            {phase === "importing" && <Loader2 className="h-4 w-4 motion-safe:animate-spin" aria-hidden="true" />}
+            {phase === "importing"
+              ? "Importing…"
+              : nothingImportable
+                ? "No bookmarks to import"
+                : nothingSelected
+                  ? "Select at least one folder"
+                  : `Import ${count} bookmark${model.importableCount === 1 ? "" : "s"}`}
+          </button>
+          {warning && (
+            <button
+              type="button"
+              onClick={openUpgrade}
+              className={`px-4 py-2 ${OUTLINE_BUTTON}`}
+            >
+              Upgrade
+            </button>
+          )}
+          {/* Why Import is inert. "Select at least one folder" is the button's own label. Mounted throughout, so it is announced. */}
+          <p role="status" className="min-w-0 basis-56 grow text-sm text-slate-900 dark:text-slate-100">
+            {phase !== "importing" && !readiness.ready && (nothingImportable || !nothingSelected) && (
+              <span className="flex items-start gap-2">
+                {readiness.waiting ? (
+                  <Loader2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600 motion-safe:animate-spin dark:text-emerald-400" aria-hidden="true" />
+                ) : (
+                  <CircleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-600 dark:text-amber-400" aria-hidden="true" />
+                )}
+                <span>{readiness.reason}</span>
+              </span>
+            )}
+          </p>
+        </div>
       </Step>
 
-      <p className="px-1 text-center text-xs text-slate-500 dark:text-slate-400">
-        {model.importableCount} selected · {model.folders.length} folder
-        {model.folders.length === 1 ? "" : "s"}
+      <p className="px-1 text-center text-xs text-slate-600 dark:text-slate-300">
+        {count} selected
+        {/* When every folder merges, step 1's notice has said so; with nothing to send, no collection is made. */}
+        {!allMerge &&
+          !nothingSelected &&
+          ` · ${formatCount(model.folders.length)} new collection${model.folders.length === 1 ? "" : "s"}`}
         {model.excludedSchemeCount > 0 &&
-          ` · ${model.excludedSchemeCount} skipped (not web pages)`}
+          ` · ${formatCount(model.excludedSchemeCount)} left out (not web pages)`}
+        {model.excludedTooLongCount > 0 &&
+          ` · ${formatCount(model.excludedTooLongCount)} left out (address too long)`}
       </p>
     </div>
   );
 }
 
-/** One numbered step of the wizard; later steps dim until step 1 has a pick. */
+/** One numbered step of the wizard. A step that isn't active yet mutes its number only: its text stays at full contrast. */
 function Step({
   number,
   title,
   hint,
   dimmed = false,
+  focusTitle = false,
   children,
 }: {
   number: number;
   title: string;
   hint?: string;
   dimmed?: boolean;
+  /** Focus the title when the step appears. */
+  focusTitle?: boolean;
   children: ReactNode;
 }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (focusTitle) heading.current?.focus();
+  }, [focusTitle]);
   return (
     <section
       aria-labelledby={`import-step-${number}`}
-      className={`rounded-2xl border border-emerald-100 bg-emerald-50/65 p-4 shadow-sm transition-opacity dark:border-emerald-900/60 dark:bg-emerald-950/25 ${dimmed ? "opacity-50" : ""}`}
+      className="min-w-0 rounded-2xl border border-emerald-100 bg-emerald-50/65 p-4 shadow-sm dark:border-emerald-900/60 dark:bg-emerald-950/25"
     >
       <div className="mb-3 flex items-start gap-3">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-emerald-600 text-sm font-bold text-white shadow-sm">
+        <span
+          aria-hidden="true"
+          className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
+            dimmed
+              ? "border border-emerald-700 text-emerald-900 dark:border-emerald-500 dark:text-emerald-100"
+              : "bg-emerald-700 text-white shadow-sm"
+          }`}
+        >
           {number}
         </span>
         <div>
           <h2
             id={`import-step-${number}`}
-            className="font-semibold text-emerald-950 dark:text-emerald-100"
+            ref={heading}
+            tabIndex={focusTitle ? -1 : undefined}
+            className={`rounded font-semibold text-emerald-950 dark:text-emerald-100 ${FOCUS_RING}`}
           >
             <span className="sr-only">Step {number}: </span>
             {title}
@@ -420,9 +607,27 @@ function NoBrowserBookmarks() {
       <button
         type="button"
         onClick={() => window.location.reload()}
-        className="rounded-full bg-emerald-600 px-4 py-2 font-semibold text-white shadow-sm transition hover:bg-emerald-500 focus-visible:outline-2 focus-visible:outline-ring"
+        className={`px-4 py-2 shadow-sm ${FILLED_BUTTON}`}
       >
         Reload
+      </button>
+    </div>
+  );
+}
+
+/** The browser refused the read: say so, rather than "no bookmarks". */
+function BrowserReadFailed({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div
+      role="alert"
+      className="flex min-h-56 flex-col items-center justify-center gap-3 rounded-2xl border border-emerald-100 bg-emerald-50/65 p-6 text-center dark:border-emerald-900/60 dark:bg-emerald-950/25"
+    >
+      <CircleAlert className="h-8 w-8 text-red-600 dark:text-red-400" aria-hidden="true" />
+      <h2 className="text-lg font-semibold text-emerald-950 dark:text-emerald-100">
+        Couldn&apos;t read your browser&apos;s bookmarks.
+      </h2>
+      <button type="button" onClick={onRetry} className={`px-4 py-2 shadow-sm ${FILLED_BUTTON}`}>
+        Retry
       </button>
     </div>
   );

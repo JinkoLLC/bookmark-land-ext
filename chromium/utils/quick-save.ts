@@ -99,3 +99,11 @@ export function stateFromError(error: unknown): QuickSaveState {
   }
   return { status: "error", kind: "retryable" };
 }
+
+/** What the popup, its right-click banner and the Library panel say when the
+ * server refuses a save at the plan's bookmark limit. */
+export function limitSentence(limit?: number): string {
+  return limit === undefined
+    ? "You've reached your plan's bookmark limit."
+    : `You've reached your plan's limit of ${limit.toLocaleString()} bookmarks.`;
+}

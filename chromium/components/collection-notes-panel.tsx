@@ -1,8 +1,18 @@
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  createElement,
+  Fragment,
+  lazy,
+  Suspense,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from "react";
 import type { Doc } from "@convex/dataModel";
 import { browser } from "wxt/browser";
-import { ArrowLeft, BookOpen, ExternalLink, PencilLine } from "lucide-react";
+import { ArrowLeft, BookOpen, ExternalLink, PencilLine, Square, SquareCheck } from "lucide-react";
 import { CollectionGlyph } from "@/components/collection-glyph";
+import { NOTE_READER_TAGS, safeNoteHref } from "@/utils/collection-note-html";
 
 type NoteCollection = Pick<
   Doc<"collections">,
@@ -36,6 +46,28 @@ export function CollectionNotesPanel({
     setMode("strip");
   }, [collection?._id]);
 
+  // What is shown: the reader closes by itself when its note is deleted elsewhere.
+  const view: NoteMode =
+    !collection || (mode === "full" && !noteText) ? "strip" : mode;
+
+  // The reader and the editor cover the panel: nothing behind them can be
+  // focused or clicked, and closing one returns focus to the control that
+  // opened it (or to the strip, when that control is gone).
+  useEffect(() => {
+    if (view === "strip") return;
+    const covered = [
+      ...document.querySelectorAll<HTMLElement>("main > :not([data-note-view])"),
+    ];
+    for (const element of covered) element.inert = true;
+    return () => {
+      for (const element of covered) element.inert = false;
+      (
+        document.querySelector<HTMLElement>(`[data-note-action="${view}"]`) ??
+        document.querySelector<HTMLElement>("[data-note-action]")
+      )?.focus();
+    };
+  }, [view]);
+
   if (!collection) return null;
 
   const openWeb = () => {
@@ -44,7 +76,7 @@ export function CollectionNotesPanel({
     });
   };
 
-  if (mode === "edit") {
+  if (view === "edit") {
     return (
       <Suspense fallback={<EditorLoadingFallback />}>
         <CollectionNoteEditor
@@ -61,19 +93,15 @@ export function CollectionNotesPanel({
 
   if (!noteText) {
     return canAddNotes ? (
-      <AddNotePrompt
-        collection={collection}
-        onEdit={() => setMode("edit")}
-        onOpenWeb={openWeb}
-      />
+      <AddNotePrompt collection={collection} onEdit={() => setMode("edit")} />
     ) : null;
   }
 
-  if (mode === "full") {
+  if (view === "full") {
     return (
       <FullPageReader
         collection={collection}
-        noteText={noteText}
+        noteHtml={collection.notes ?? ""}
         onBack={() => setMode("strip")}
         onEdit={() => setMode("edit")}
         onOpenWeb={openWeb}
@@ -84,127 +112,108 @@ export function CollectionNotesPanel({
   return (
     <PinnedStrip
       collection={collection}
-      noteText={noteText}
+      noteHtml={collection.notes ?? ""}
       expanded={expanded}
       onToggle={() => setExpanded((value) => !value)}
       onViewFull={() => setMode("full")}
       onEdit={() => setMode("edit")}
-      onOpenWeb={openWeb}
     />
   );
 }
 
 function EditorLoadingFallback() {
   return (
-    <section className="fixed inset-0 z-40 flex items-center justify-center bg-neutral-50 text-sm text-neutral-500 dark:bg-neutral-950 dark:text-neutral-400">
+    <section
+      data-note-view
+      className="fixed inset-0 z-40 flex items-center justify-center bg-neutral-50 text-sm text-neutral-500 dark:bg-neutral-950 dark:text-neutral-400"
+    >
       Loading note editor…
     </section>
   );
 }
 
+// Outline: the panel's one filled button is "Save to bookmark.land".
+const OUTLINE_BUTTON =
+  "inline-flex min-h-6 shrink-0 items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-800";
+
+// The line clamp does not count lines inside the reader's flex task items:
+// in the strip a task is a block with its mark hung in the left padding.
+const STRIP_TASKS =
+  "[&_ul[data-type=taskList]>li]:relative [&_ul[data-type=taskList]>li]:block! [&_ul[data-type=taskList]>li]:pl-8 [&_ul[data-type=taskList]>li>label]:absolute [&_ul[data-type=taskList]>li>label]:left-0";
+
+/** One line, so the bookmark list keeps its rows. */
 function AddNotePrompt({
   collection,
   onEdit,
-  onOpenWeb,
 }: {
   collection: NoteCollection;
   onEdit: () => void;
-  onOpenWeb: () => void;
 }) {
   return (
-    <section className="mx-2 mb-2 rounded-lg border border-dashed border-emerald-300 bg-emerald-50/70 p-3 text-emerald-950 shadow-sm dark:border-emerald-900 dark:bg-emerald-950/35 dark:text-emerald-50">
-      <div className="flex items-start gap-2">
-        <div className="rounded-lg bg-white/80 p-1.5 text-emerald-700 dark:bg-emerald-900/70 dark:text-emerald-200">
-          <PencilLine className="h-4 w-4" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold">Add a note for {collection.name}</p>
-          <p className="mt-1 text-xs leading-5 text-emerald-900/75 dark:text-emerald-100/75">
-            Keep context, checklists, or reminders attached to this collection.
-          </p>
-        </div>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2">
-        <button
-          type="button"
-          onClick={onEdit}
-          className="inline-flex items-center gap-1 rounded-md bg-emerald-600 px-2 py-1 text-xs font-semibold text-white hover:bg-emerald-500"
-        >
-          Add note
-        </button>
-        <button
-          type="button"
-          onClick={onOpenWeb}
-          className="inline-flex items-center gap-1 rounded-md border border-emerald-300 bg-white/70 px-2 py-1 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 dark:border-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-200 dark:hover:bg-emerald-900"
-        >
-          Open in bookmark.land
-          <ExternalLink className="h-3 w-3" />
-        </button>
-      </div>
+    <section className="mx-2 flex min-h-7 items-center gap-2 pl-2">
+      <PencilLine
+        className="h-4 w-4 shrink-0 text-neutral-500 dark:text-neutral-400"
+        aria-hidden="true"
+      />
+      <p className="min-w-0 flex-1 truncate" title={`Add a note for ${collection.name}`}>
+        Add a note for {collection.name}
+      </p>
+      <button type="button" data-note-action="edit" onClick={onEdit} className={OUTLINE_BUTTON}>
+        Add note
+      </button>
     </section>
   );
 }
 
 function PinnedStrip({
   collection,
-  noteText,
+  noteHtml,
   expanded,
   onToggle,
   onViewFull,
   onEdit,
-  onOpenWeb,
 }: {
   collection: NoteCollection;
-  noteText: string;
+  noteHtml: string;
   expanded: boolean;
   onToggle: () => void;
   onViewFull: () => void;
   onEdit: () => void;
-  onOpenWeb: () => void;
 }) {
   return (
-    <section className="mx-2 mb-2 overflow-hidden rounded-lg border border-sky-200 bg-sky-50 text-sky-950 shadow-sm dark:border-sky-900 dark:bg-sky-950/50 dark:text-sky-50">
+    <section className="mx-2 overflow-hidden rounded-md border border-neutral-200 dark:border-neutral-800">
       <button
         type="button"
+        data-note-action="toggle"
+        aria-expanded={expanded}
         onClick={onToggle}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-sky-100/70 dark:hover:bg-sky-900/60"
+        // 26 px + the border: a 28 px row when collapsed.
+        className="flex h-[26px] w-full items-center gap-2 rounded-md px-2 text-left hover:bg-neutral-100 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring dark:hover:bg-neutral-800"
       >
         <CollectionGlyph icon={collection.icon} color={collection.color} className="h-4 w-4" />
-        <span className="min-w-0 flex-1 truncate text-sm font-semibold">
+        <span className="min-w-0 flex-1 truncate font-medium">
           Note for {collection.name}
         </span>
-        <span className="text-xs text-sky-700 dark:text-sky-300">
-          {expanded ? "Hide" : "Read"}
+        <span className="text-xs text-neutral-500 dark:text-neutral-400">
+          {expanded ? "Hide note" : "Show note"}
         </span>
       </button>
       {expanded && (
-        <div className="border-t border-sky-200 px-3 py-3 dark:border-sky-900">
-          <p className="max-h-40 overflow-y-auto whitespace-pre-wrap pr-1 text-sm leading-5 text-sky-900/85 dark:text-sky-100/80">
-            {noteText}
-          </p>
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={onViewFull}
-              className="inline-flex items-center gap-1 rounded-md bg-sky-600 px-2 py-1 text-xs font-semibold text-white hover:bg-sky-500"
-            >
-              <BookOpen className="h-3 w-3" />
+        <div className="border-t border-neutral-200 p-2 dark:border-neutral-800">
+          {/* Clamped, not scrolled: "View full note" shows the rest. */}
+          {/* The reader's structure; links are plain text here, so the preview adds no Tab stops. */}
+          <div
+            className={`tiptap-extension-editor line-clamp-6 leading-5 text-neutral-700 dark:text-neutral-300 ${STRIP_TASKS}`}
+          >
+            {noteContent(noteHtml, false)}
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2">
+            <button type="button" data-note-action="full" onClick={onViewFull} className={OUTLINE_BUTTON}>
+              <BookOpen className="h-3 w-3" aria-hidden="true" />
               View full note
             </button>
-            <button
-              type="button"
-              onClick={onEdit}
-              className="inline-flex items-center gap-1 rounded-md border border-sky-300 bg-white/70 px-2 py-1 text-xs font-semibold text-sky-800 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950/40 dark:text-sky-200 dark:hover:bg-sky-900"
-            >
+            <button type="button" data-note-action="edit" onClick={onEdit} className={OUTLINE_BUTTON}>
               Edit
-            </button>
-            <button
-              type="button"
-              onClick={onOpenWeb}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold text-sky-700 hover:bg-sky-100 dark:text-sky-300 dark:hover:bg-sky-900"
-            >
-              Open in web
-              <ExternalLink className="h-3 w-3" />
             </button>
           </div>
         </div>
@@ -215,24 +224,28 @@ function PinnedStrip({
 
 function FullPageReader({
   collection,
-  noteText,
+  noteHtml,
   onBack,
   onEdit,
   onOpenWeb,
 }: {
   collection: NoteCollection;
-  noteText: string;
+  noteHtml: string;
   onBack: () => void;
   onEdit: () => void;
   onOpenWeb: () => void;
 }) {
   return (
-    <section className="fixed inset-0 z-40 flex flex-col bg-neutral-50 text-neutral-950 dark:bg-neutral-950 dark:text-neutral-50">
+    <section
+      data-note-view
+      className="fixed inset-0 z-40 flex flex-col bg-neutral-50 text-neutral-950 dark:bg-neutral-950 dark:text-neutral-50"
+    >
       <header className="flex items-center gap-2 border-b border-neutral-200 px-3 py-2 dark:border-neutral-800">
         <button
           type="button"
+          autoFocus
           onClick={onBack}
-          className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 dark:hover:bg-neutral-800 dark:hover:text-neutral-50"
+          className="rounded-md p-1.5 text-neutral-500 hover:bg-neutral-200 hover:text-neutral-900 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:text-neutral-400 dark:hover:bg-neutral-800 dark:hover:text-neutral-50"
           aria-label="Back to note preview"
         >
           <ArrowLeft className="h-4 w-4" />
@@ -240,32 +253,93 @@ function FullPageReader({
         <CollectionGlyph icon={collection.icon} color={collection.color} className="h-4 w-4" />
         <div className="min-w-0 flex-1">
           <p className="truncate text-sm font-semibold">{collection.name}</p>
-          <p className="text-xs text-neutral-500">Collection note</p>
+          <p className="text-xs text-neutral-500 dark:text-neutral-400">Collection note</p>
         </div>
         <button
           type="button"
           onClick={onEdit}
-          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:opacity-90"
+          className="rounded-md bg-primary px-2 py-1 text-xs font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Edit
         </button>
         <button
           type="button"
           onClick={onOpenWeb}
-          className="inline-flex items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 dark:border-neutral-700 dark:hover:bg-neutral-900"
+          className="inline-flex min-h-6 items-center gap-1 rounded-md border border-neutral-300 px-2 py-1 text-xs font-semibold hover:bg-neutral-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:border-neutral-700 dark:hover:bg-neutral-900"
           aria-label="Open note in bookmark.land"
         >
           <ExternalLink className="h-3 w-3" />
         </button>
       </header>
-      <article className="min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        <div className="mx-auto max-w-prose">
-          <p className="whitespace-pre-wrap text-sm leading-6 text-neutral-700 dark:text-neutral-200">
-            {noteText}
-          </p>
+      <article
+        // Scrolls: reachable and scrollable from the keyboard.
+        tabIndex={0}
+        aria-label={`Note for ${collection.name}`}
+        className="min-h-0 flex-1 overflow-y-auto px-4 py-4 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+      >
+        {/* The editor's typography, without its focus outline or minimum height. */}
+        <div className="tiptap-extension-editor mx-auto max-w-prose text-sm leading-6 text-neutral-700 focus-within:outline-none! dark:text-neutral-200 [&>*+*]:mt-2">
+          {noteContent(noteHtml)}
         </div>
       </article>
     </section>
+  );
+}
+
+/** The note as React elements: only the tags and link targets the editor writes. */
+function noteContent(html: string, links = true): ReactNode {
+  // Plain text (a note written before the editor) keeps its line breaks.
+  if (!/<[a-z]/i.test(html)) return <p className="whitespace-pre-wrap">{html.trim()}</p>;
+  const { body } = new DOMParser().parseFromString(html, "text/html");
+  return [...body.childNodes].map((node, key) => noteNode(node, key, links));
+}
+
+function noteNode(node: ChildNode, key: number, links: boolean): ReactNode {
+  if (node.nodeType === Node.TEXT_NODE) return node.textContent;
+  if (node.nodeType !== Node.ELEMENT_NODE) return null;
+  const element = node as Element;
+  const tag = element.tagName.toLowerCase();
+  if (tag === "script" || tag === "style") return null;
+  const children = [...element.childNodes].map((child, index) => noteNode(child, index, links));
+  const href = links && tag === "a" ? safeNoteHref(element.getAttribute("href")) : null;
+  // Anything else keeps its text and loses its markup.
+  if (!NOTE_READER_TAGS.has(tag) || (tag === "a" && !href)) {
+    // The editor has no level-one heading; the web app's shows as the top level here.
+    return tag === "h1" ? <h2 key={key}>{children}</h2> : <Fragment key={key}>{children}</Fragment>;
+  }
+  if (tag === "br" || tag === "hr") return createElement(tag, { key });
+  if (tag === "input") {
+    // A mark, not a disabled control: nothing here can be ticked.
+    const done = element.hasAttribute("checked");
+    const Mark = done ? SquareCheck : Square;
+    return (
+      <Mark
+        key={key}
+        role="img"
+        aria-label={`${done ? "Done" : "To do"}: ${element.closest("li")?.textContent?.trim()}`}
+        className="h-4 w-4"
+      />
+    );
+  }
+  if (tag === "a") {
+    return (
+      <a
+        key={key}
+        href={href!}
+        target="_blank"
+        rel="noreferrer"
+        className="rounded-sm focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+      >
+        {children}
+      </a>
+    );
+  }
+  // The task-list rules in the stylesheet hang on data-type.
+  const type = element.getAttribute("data-type");
+  return createElement(
+    tag,
+    { key, "data-type": type === "taskList" || type === "taskItem" ? type : undefined },
+    ...children,
   );
 }
 
