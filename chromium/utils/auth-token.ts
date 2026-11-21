@@ -52,18 +52,22 @@ export function onAccountInvalidated(handler: () => void): () => void {
 }
 
 /**
- * The signed-in user's email, read by the background worker from Clerk's
- * Frontend API (the popup's own clerk-js is often not signed in: auth runs
- * through the worker, see convex-extension-provider.tsx).
+ * The signed-in user's stable account id and email, read by the background
+ * worker from Clerk's Frontend API (the popup's own clerk-js is often not
+ * signed in: auth runs through the worker, see convex-extension-provider.tsx).
+ * Each is null when the worker couldn't say.
  */
-export async function getAccountEmailFromBackground(): Promise<string | null> {
+export async function getAccountFromBackground(): Promise<{ id: string | null; email: string | null }> {
   try {
     const response = (await browser.runtime.sendMessage({ type: GET_ACCOUNT_MESSAGE })) as
-      | { email?: string | null }
+      | { accountId?: string | null; email?: string | null }
       | undefined;
-    return typeof response?.email === "string" ? response.email : null;
+    return {
+      id: typeof response?.accountId === "string" ? response.accountId : null,
+      email: typeof response?.email === "string" ? response.email : null,
+    };
   } catch {
-    return null;
+    return { id: null, email: null };
   }
 }
 

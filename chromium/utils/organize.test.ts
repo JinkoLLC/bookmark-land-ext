@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCollectionOptions, livePageCounts, pageFeedNote, suggestTags } from "./organize";
+import { buildCollectionOptions, filterPickerRows, inputAfterTagSaved, livePageCounts, pageFeedNote, pickerRows, suggestTags } from "./organize";
 
 describe("buildCollectionOptions", () => {
   const c = (
@@ -97,5 +97,42 @@ describe("collections shown on live pages", () => {
     );
     expect(pageFeedNote(counts.get("c"), "bookmark")).toBeUndefined();
     expect(pageFeedNote(counts.get(""), "import")).toBeUndefined();
+  });
+});
+
+describe("pickerRows", () => {
+  const c = (id: string, name: string, order: number, parentId?: string) => ({ _id: id, name, order, parentId });
+  const rows = pickerRows([
+    c("w", "Work", 1),
+    c("p", "Personal", 0),
+    c("pa", "Archive", 0, "p"),
+    c("wa", "Archive", 0, "w"),
+    c("wa1", "2025", 0, "wa"),
+  ]);
+
+  it("puts Unsorted first and gives nested collections their parent path", () => {
+    expect(rows.map((r) => [r.id, r.name, r.path])).toEqual([
+      [undefined, "Unsorted", ""],
+      ["p", "Personal", ""],
+      ["pa", "Archive", "Personal"],
+      ["w", "Work", ""],
+      ["wa", "Archive", "Work"],
+      ["wa1", "2025", "Work / Archive"],
+    ]);
+  });
+
+  it("filters by name and by parent path, Unsorted by its name", () => {
+    expect(filterPickerRows(rows, " ARCH ").map((r) => r.id)).toEqual(["pa", "wa", "wa1"]);
+    expect(filterPickerRows(rows, "personal").map((r) => r.id)).toEqual(["p", "pa"]);
+    expect(filterPickerRows(rows, "unso").map((r) => r.name)).toEqual(["Unsorted"]);
+    expect(filterPickerRows(rows, "zzz")).toEqual([]);
+    expect(filterPickerRows(rows, "  ")).toBe(rows);
+  });
+});
+
+describe("inputAfterTagSaved", () => {
+  it("clears the saved draft but keeps a tag typed while it was saving", () => {
+    expect(inputAfterTagSaved("design", "design")).toBe("");
+    expect(inputAfterTagSaved("typography", "design")).toBe("typography");
   });
 });

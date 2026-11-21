@@ -7,27 +7,15 @@ describe("allowanceWarningFor", () => {
     expect(allowanceWarningFor(0, 100, 100)).toBeNull();
   });
 
-  it("computes the split when the selection exceeds the allowance", () => {
-    expect(allowanceWarningFor(10, 98, 100)).toEqual({
-      remaining: 2,
-      willImport: 2,
-      willSkip: 8,
-    });
+  it("reports the room left when the selection exceeds the allowance", () => {
+    expect(allowanceWarningFor(10, 98, 100)).toEqual({ remaining: 2 });
   });
 
   it("handles an already-full library", () => {
-    expect(allowanceWarningFor(5, 100, 100)).toEqual({
-      remaining: 0,
-      willImport: 0,
-      willSkip: 5,
-    });
+    expect(allowanceWarningFor(5, 100, 100)).toEqual({ remaining: 0 });
   });
 
   it("never reports negative remaining when over the limit", () => {
-    expect(allowanceWarningFor(5, 120, 100)).toEqual({
-      remaining: 0,
-      willImport: 0,
-      willSkip: 5,
-    });
+    expect(allowanceWarningFor(5, 120, 100)).toEqual({ remaining: 0 });
   });
 });

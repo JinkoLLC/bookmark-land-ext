@@ -8,7 +8,7 @@ export const TREE_HEIGHT_KEY = "library-panel:tree-height";
 
 /** Menu box estimate used to keep it inside the panel viewport. */
 export const MENU_WIDTH = 176;
-export const MENU_HEIGHT = 44;
+export const MENU_HEIGHT = 72;
 
 /**
  * Clamp a desired tree height so the tree keeps a usable minimum and the
@@ -22,6 +22,22 @@ export function clampTreeHeight(
 ): number {
   const max = Math.max(treeStart + listStart - MIN_LIST_HEIGHT, MIN_TREE_HEIGHT);
   return Math.min(Math.max(desired, MIN_TREE_HEIGHT), max);
+}
+
+/**
+ * Where the divider sits, for assistive technology: the tree's height and the
+ * range it can be resized within, as whole percentages of the panel's height.
+ */
+export function dividerPercents(
+  treeHeight: number,
+  listHeight: number,
+  panelHeight: number,
+): { now: number; min: number; max: number } {
+  const percent = (height: number) => Math.round((height / Math.max(panelHeight, 1)) * 100);
+  const min = percent(MIN_TREE_HEIGHT);
+  const max = percent(clampTreeHeight(Infinity, treeHeight, listHeight));
+  // A tree shorter than its content-sized minimum still reports a value in range.
+  return { now: Math.min(Math.max(percent(treeHeight), min), max), min, max };
 }
 
 /** Parse a persisted tree height; anything non-numeric or non-positive is ignored. */

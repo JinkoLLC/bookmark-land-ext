@@ -1,11 +1,15 @@
-import { useMemo, useState } from "react";
-import { useQueries, useQuery } from "convex/react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useQueries } from "convex/react";
 import { api } from "@convex/api";
 import { siteBatches } from "@/utils/site-batches";
 import type { FunctionReturnType } from "convex/server";
 import { ChevronDown, ShieldAlert, X } from "lucide-react";
+import { StatusLine } from "@/components/status-line";
 
 export type SiteRisk = FunctionReturnType<typeof api.siteSecurity.flaggedSites>[number];
+type SiteDetail = FunctionReturnType<typeof api.siteSecurity.siteDetail>;
+
+const RING = "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring";
 
 // Same wording as the web badge.
 // flaggedSites only returns these three levels.
@@ -62,8 +66,7 @@ export function SiteRiskNotice({ risk }: { risk: SiteRisk }) {
   const amber = risk.riskLevel !== "possiblyAffected";
   return (
     <div
-      role="alert"
-      className={`rounded-md border p-2.5 ${
+      className={`rounded-md border px-2.5 py-1.5 ${
         amber
           ? "border-amber-300 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/40 dark:text-amber-100"
           : "border-neutral-300 bg-neutral-50 dark:border-neutral-700 dark:bg-neutral-800/60"
@@ -71,8 +74,9 @@ export function SiteRiskNotice({ risk }: { risk: SiteRisk }) {
     >
       <div className="flex items-center gap-2">
         <ShieldAlert className={`h-5 w-5 shrink-0 ${colorFor(risk)}`} aria-hidden="true" />
-        <div className="min-w-0 flex-1">
-          <p className="font-semibold">Security warning</p>
+        {/* The alert is the warning's words only, not the button or the links under it. */}
+        <div role="alert" className="min-w-0 flex-1">
+          <p className="font-semibold leading-[18px]">Security warning</p>
           <p className="text-xs opacity-80">{LEVEL_LABEL[risk.riskLevel]} site</p>
         </div>
         <button
@@ -80,11 +84,11 @@ export function SiteRiskNotice({ risk }: { risk: SiteRisk }) {
           onClick={() => setOpen(!open)}
           aria-expanded={open}
           aria-controls={detailsId}
-          className="flex shrink-0 items-center gap-0.5 rounded px-1.5 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-ring"
+          className="flex min-h-6 shrink-0 items-center gap-0.5 rounded px-1.5 py-1 text-xs font-medium underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Why?
           <ChevronDown
-            className={`h-3.5 w-3.5 transition-transform ${open ? "rotate-180" : ""}`}
+            className={`h-3.5 w-3.5 motion-safe:transition-transform ${open ? "rotate-180" : ""}`}
             aria-hidden="true"
           />
         </button>
@@ -143,7 +147,7 @@ export function SiteRiskToggle({
       aria-controls={detailsId}
       aria-label={label}
       title={label}
-      className={`shrink-0 rounded p-1 hover:bg-neutral-200 focus-visible:outline-2 focus-visible:outline-ring dark:hover:bg-neutral-700 ${colorFor(risk)} ${open ? "bg-neutral-200 dark:bg-neutral-700" : ""}`}
+      className={`flex h-6 w-6 shrink-0 items-center justify-center rounded hover:bg-neutral-200 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring dark:hover:bg-neutral-700 ${colorFor(risk)} ${open ? "bg-neutral-200 dark:bg-neutral-700" : ""}`}
     >
       <ShieldAlert className="h-3.5 w-3.5" aria-hidden="true" />
     </button>
@@ -153,7 +157,9 @@ export function SiteRiskToggle({
 /**
  * The box that slides down under a flagged Bookmark row: the level and what
  * it means, the software found and its known issues, and when the site was
- * last checked. Loads `siteDetail` only while open.
+ * last checked. Loads `siteDetail` only while open; a failed load is said
+ * here, with a Retry, and never reaches the surface's error boundary (which
+ * would replace a confirmed save with "Unable to load your library").
  */
 export function SiteRiskDetails({
   risk,
@@ -168,7 +174,21 @@ export function SiteRiskDetails({
    * carries the toggle: no own frame, title or close button. */
   embedded?: boolean;
 }) {
-  const detail = useQuery(api.siteSecurity.siteDetail, { site: risk.site });
+  // Dropping the subscription for one render makes the server answer afresh.
+  const [dropped, setDropped] = useState(false);
+  useEffect(() => {
+    if (dropped) setDropped(false);
+  }, [dropped]);
+  const queries = useMemo(() => {
+    const wanted: Parameters<typeof useQueries>[0] = {};
+    if (!dropped) wanted.detail = { query: api.siteSecurity.siteDetail, args: { site: risk.site } };
+    return wanted;
+  }, [dropped, risk.site]);
+  // useQueries hands a failed load back as a value, where useQuery would throw.
+  const result = useQueries(queries).detail as SiteDetail | Error | undefined;
+  const failed = result instanceof Error;
+  const detail = failed ? undefined : result;
+  const region = useRef<HTMLDivElement>(null);
   const amber = risk.riskLevel !== "possiblyAffected";
   const frame = embedded
     ? "mt-2 border-t border-current/15 pt-2"
@@ -180,19 +200,28 @@ export function SiteRiskDetails({
 
   return (
     <div
+      ref={region}
       id={id}
       role="region"
       aria-label={`Site security for ${risk.site}`}
-      className={`bl-slide-down text-xs ${frame}`}
+      // In the popup the details scroll with the middle region; a stop of
+      // their own lets the keyboard land on them and bring them into view.
+      // In the panel they only take focus when Retry goes away.
+      tabIndex={embedded ? 0 : -1}
+      className={`bl-slide-down text-xs ${RING} ${embedded ? "rounded " : ""}${frame}`}
     >
       {!embedded && (
         <div className="flex items-start justify-between gap-2">
           <p className="font-semibold">Site security: {LEVEL_LABEL[risk.riskLevel]}</p>
           <button
             type="button"
-            onClick={onClose}
+            onClick={() => {
+              onClose();
+              // This button goes with the box: focus returns to the row's shield button, which opened it.
+              document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(id)}"]`)?.focus();
+            }}
             aria-label="Close"
-            className="-m-1 rounded p-1 opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-ring"
+            className="-m-1 flex h-6 w-6 shrink-0 items-center justify-center rounded opacity-70 hover:opacity-100 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
           >
             <X className="h-3.5 w-3.5" aria-hidden="true" />
           </button>
@@ -200,7 +229,26 @@ export function SiteRiskDetails({
       )}
       <p className={embedded ? "opacity-80" : "mt-0.5 opacity-80"}>{LEVEL_MEANING[risk.riskLevel]}</p>
 
-      {detail === undefined && <p className="mt-2 opacity-70">Loading details…</p>}
+      {failed ? (
+        <div className="mt-2 flex items-center gap-2">
+          <StatusLine tone="error" role="alert" className="min-w-0 flex-1">
+            Couldn&apos;t load the security details.
+          </StatusLine>
+          <button
+            type="button"
+            onClick={() => {
+              // This button goes away while the answer loads: focus stays in the details.
+              region.current?.focus();
+              setDropped(true);
+            }}
+            className={`min-h-6 shrink-0 rounded-md border border-current/30 px-2 font-medium hover:bg-current/10 ${RING}`}
+          >
+            Retry
+          </button>
+        </div>
+      ) : (
+        detail === undefined && <p className="mt-2 opacity-70">Loading details…</p>
+      )}
       {detail && detail.detectedSoftware.length > 0 && (
         <ul className="mt-2 space-y-1.5">
           {detail.detectedSoftware.map((software) => (
@@ -223,7 +271,7 @@ export function SiteRiskDetails({
                             href={`https://nvd.nist.gov/vuln/detail/${finding.cveId}`}
                             target="_blank"
                             rel="noopener noreferrer"
-                            className="font-medium underline underline-offset-2"
+                            className="rounded-sm font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
                           >
                             {finding.cveId}
                           </a>
@@ -246,7 +294,7 @@ export function SiteRiskDetails({
           href={`${import.meta.env.WXT_WEB_APP_URL}/help/site-security`}
           target="_blank"
           rel="noreferrer"
-          className="font-medium underline underline-offset-2"
+          className="rounded-sm font-medium underline underline-offset-2 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
           Learn more
         </a>
