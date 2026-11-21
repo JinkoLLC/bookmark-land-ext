@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildCollectionOptions, filterPickerRows, inputAfterTagSaved, livePageCounts, pageFeedNote, pickerRows, suggestTags } from "./organize";
+import { buildCollectionOptions, filterPickerRows, newCollectionName, inputAfterTagSaved, livePageCounts, pageFeedNote, pickerRows, suggestTags } from "./organize";
 
 describe("buildCollectionOptions", () => {
   const c = (
@@ -134,5 +134,27 @@ describe("inputAfterTagSaved", () => {
   it("clears the saved draft but keeps a tag typed while it was saving", () => {
     expect(inputAfterTagSaved("design", "design")).toBe("");
     expect(inputAfterTagSaved("typography", "design")).toBe("typography");
+  });
+});
+
+describe("newCollectionName", () => {
+  const rows = pickerRows([{ _id: "a", name: "Recipes", order: 0 }]);
+  it("offers the trimmed filter as a new name", () => {
+    expect(newCollectionName(rows, "  Travel ")).toBe("Travel");
+  });
+  it("offers nothing for an empty filter or a name a collection already has", () => {
+    expect(newCollectionName(rows, "   ")).toBeNull();
+    expect(newCollectionName(rows, "recipes")).toBeNull();
+    expect(newCollectionName(rows, "unsorted")).toBeNull();
+  });
+  it("checks only the collections inside the chosen parent", () => {
+    const nested = pickerRows([
+      { _id: "w", name: "Work", order: 0 },
+      { _id: "p", name: "Personal", order: 1 },
+      { _id: "r", name: "Receipts", order: 0, parentId: "w" },
+    ]);
+    expect(newCollectionName(nested, "Receipts")).toBe("Receipts");
+    expect(newCollectionName(nested, "Receipts", "p")).toBe("Receipts");
+    expect(newCollectionName(nested, "receipts", "w")).toBeNull();
   });
 });

@@ -159,6 +159,8 @@ export const api = {
     >("bookmarks:search"),
   },
   collectionMutations: {
+    // Server: names are normalized; refuses nesting past 5 levels with a readable ConvexError.
+    create: mutation<{ name: string; parentId?: Id<"collections"> }, Id<"collections">>("collectionMutations:create"),
     update: mutation<
       { id: Id<"collections">; name?: string; icon?: string; color?: string; notes?: string },
       Id<"collections">

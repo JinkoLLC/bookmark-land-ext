@@ -6,6 +6,7 @@ import { browser } from "wxt/browser";
 import { ExternalLink } from "lucide-react";
 import { openUpgrade } from "@/components/quick-save";
 import { PageAddress, QrExports, QrImage, TEXT_LINK, useCopyState, useQrSvg, type CopyState } from "@/components/qr-view";
+import { ShortLinkMeter } from "@/components/short-link-meter";
 import { StatusLine } from "@/components/status-line";
 import { ViewHeader } from "@/components/view-header";
 import { MORE_BELOW, useScrollMore } from "@/hooks/use-scroll-more";
@@ -13,7 +14,6 @@ import { getAccountFromBackground } from "@/utils/auth-token";
 import { copyText, copyWhenReady } from "@/utils/clipboard";
 import {
   NEW_SESSION,
-  allowanceLine,
   clipboardLine,
   createRecordKey,
   deriveShortLinkView,
@@ -393,7 +393,7 @@ export function ShortLinkView({
       <PageAddress text={tab.url} className={`mt-0.5 ${MUTED}`} />
     </div>
   );
-  const allowance = usage && <p className={`text-xs ${MUTED}`}>{allowanceLine(usage, view.kind === "create")}</p>;
+  const allowance = usage && <ShortLinkMeter usage={usage} />;
 
   const limit = usage && limitReached(usage);
   /** Why nothing can be created, and the way out of it. `upgrade`: the Upgrade button's style. */
@@ -413,7 +413,7 @@ export function ShortLinkView({
             <ManageLink />
           </p>
         )}
-        {limit.heldUnsaid && allowance}
+        {allowance}
       </>
     );
   // Deleting is done on the website, so the line comes with the way there (once, where the limit names it too).
