@@ -114,8 +114,8 @@ export function reachedPlanLimit(
 
 /**
  * The rows of the sample list, from the bookmarks that were sent. Only a
- * complete import shows it: the sample is drawn from the selection, so after
- * skips it could list bookmarks that weren't imported. One row per address
+ * complete import without duplicates shows it: the sample is drawn from the
+ * selection, so after skips or duplicates it could list bookmarks that weren't added. One row per address
  * (the same page can sit in two folders) and per title.
  */
 export function importSample<T extends { url: string; title?: string }>(
@@ -123,7 +123,8 @@ export function importSample<T extends { url: string; title?: string }>(
   sent: readonly T[],
   size: number,
 ): T[] {
-  if (importOutcome(result) !== "imported") return [];
+  // After duplicates, which of the sent bookmarks were added isn't known: a sample could name one already there.
+  if (importOutcome(result) !== "imported" || result.duplicates > 0) return [];
   // By address, then by the title a row shows: a sample needn't say one thing twice.
   const byUrl = new Map(sent.map((b) => [b.url, b])).values();
   const unique = [...new Map([...byUrl].map((b) => [b.title?.trim() || b.url, b])).values()];
