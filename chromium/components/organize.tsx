@@ -130,6 +130,8 @@ function CollectionPicker({
   const move = useMutation(api.bookmarkMutations.moveToCollection);
   const createCollection = useMutation(api.collectionMutations.create);
   const [creating, setCreating] = useState(false);
+  /** A move is on its way: `selected` is stale until it lands, so a choice now could be wrongly skipped. */
+  const moving = useRef(false);
   const [open, setOpen] = useState(false);
   const [filter, setFilter] = useState("");
   /** Highlighted row, as an index into `rows`; -1 = none. */
@@ -205,23 +207,26 @@ function CollectionPicker({
   };
 
   const choose = async (row: PickerRow) => {
-    // A create-and-move under way would overwrite a choice made now.
-    if (creating) return;
+    // A move or create-and-move under way would overwrite a choice made now.
+    if (creating || moving.current) return;
     close();
     if (row.id === selected.id) return;
     onError(null);
+    moving.current = true;
     try {
       await move({ id: bookmarkId, collectionId: row.id as Id<"collections"> | undefined });
     } catch (error) {
       console.error("[extension] Move to collection failed", error);
       onError("Couldn't move it. Try again.");
+    } finally {
+      moving.current = false;
     }
   };
 
   /** Makes the filter text a collection (inside `parentId` when given) and moves the bookmark into it. */
   const create = async (parentId?: Id<"collections">) => {
     const name = parentId ? newSubName : newName;
-    if (!name || creating) return;
+    if (!name || creating || moving.current) return;
     setCreating(true);
     onError(null);
     let id: Id<"collections">;
