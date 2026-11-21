@@ -54,12 +54,21 @@ export interface PickerRow {
   name: string;
   /** Names of the collections above it, outermost first; "" at the top level. */
   path: string;
+  /** No parent = top level (Unsorted counts as top level). */
+  parentId?: string;
   icon?: string;
   color?: string;
 }
 
 /** The picker's flat rows: Unsorted first, then the collections in tree order,
  * each nested one with its parent path (which tells same-named ones apart). */
+/** The filter text as a new collection's name inside `parentId` (top level when absent), or null when it is empty or a collection there already has it. */
+export function newCollectionName(rows: PickerRow[], filter: string, parentId?: string): string | null {
+  const name = filter.trim();
+  if (!name) return null;
+  return rows.some((row) => row.parentId === parentId && row.name.toLowerCase() === name.toLowerCase()) ? null : name;
+}
+
 export function pickerRows(collections: CollectionLike[]): PickerRow[] {
   const byId = new Map(collections.map((c) => [c._id, c]));
   const pathOf = (id: string) => {
@@ -76,6 +85,7 @@ export function pickerRows(collections: CollectionLike[]): PickerRow[] {
       id,
       name,
       path: pathOf(id),
+      parentId: byId.get(id)?.parentId,
       icon,
       color,
     })),

@@ -98,28 +98,30 @@ export const trackedQrAddress = (shortUrl: string) => `${shortUrl}?qr`;
 const count = (n: number) => n.toLocaleString();
 
 /**
- * "38 of 50 left this month · Pro plan". On a plan that caps the short links
- * held at once, that cap is named one away from it ("10 left this month ·
- * 24 of 25 in use") and alone once it is reached, when what is left of the
- * month can't be used: "25 of 25 in use".
+ * The month's allowance as a meter: "12 of 50 short links used this month",
+ * "38 left", the bar's fill (0 to 1), and, on a plan that caps the short
+ * links held at once, "24 of 25 in use".
  */
-export function allowanceLine(usage: ShortLinkUsage, withPlan = false): string {
-  const left = count(Math.max(0, usage.monthly - usage.created));
+export function shortLinkMeter(usage: ShortLinkUsage) {
+  const used = Math.min(usage.created, usage.monthly);
   const held = usage.held ?? 0;
-  if (usage.liveCap !== undefined && held >= usage.liveCap - 1) {
+  const cap = usage.liveCap;
+  return {
+    used,
+    monthly: usage.monthly,
+    usedLine: `${count(used)} of ${count(usage.monthly)} short links used this month`,
+    leftLine: `${count(usage.monthly - used)} left`,
+    fill: usage.monthly > 0 ? used / usage.monthly : 1,
     // The server counts held up to one past the cap, so past it the exact number isn't known.
-    if (held > usage.liveCap) return `More than ${count(usage.liveCap)} in use`;
-    const inUse = `${count(held)} of ${count(usage.liveCap)} in use`;
-    return held === usage.liveCap ? inUse : `${left} left this month · ${inUse}`;
-  }
-  return `${left} of ${count(usage.monthly)} left this month${withPlan ? ` · ${TIER_LABEL[usage.tier]} plan` : ""}`;
+    inUse: cap === undefined ? null : held > cap ? `More than ${count(cap)} in use` : `${count(held)} of ${count(cap)} in use`,
+  };
 }
 
 /** Why no short link can be created now (the monthly sentence first), or null when one can. */
 export function limitReached(
   usage: ShortLinkUsage,
   locale?: string,
-): { sentences: string[]; upgrade: boolean; manage: boolean; heldUnsaid: boolean } | null {
+): { sentences: string[]; upgrade: boolean; manage: boolean } | null {
   const monthly = usage.created >= usage.monthly;
   const kept = usage.liveCap !== undefined && (usage.held ?? 0) >= usage.liveCap;
   if (!monthly && !kept) return null;
@@ -141,8 +143,6 @@ export function limitReached(
     ],
     upgrade: monthly && (usage.tier === "free" || usage.tier === "edu"),
     manage: kept,
-    // Only the sentence after a used-up month, at the cap exactly, leaves out how many are held: the view adds that line.
-    heldUnsaid: kept && monthly && !over,
   };
 }
 

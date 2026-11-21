@@ -206,6 +206,11 @@ duplicate bookmark. The popup reports that the page is already saved and opens
 the same organize controls for the existing bookmark, so collection, tag, and
 favorite changes apply to the saved item.
 
+The collection picker also creates collections: type a name that no collection
+has, then choose **New collection** (top level) or **New subcollection** (inside
+the bookmark's current collection). The bookmark moves into the new collection.
+Press Enter when nothing matches to create a top-level one.
+
 ## Short link and QR code
 
 On any `http`/`https` page the popup has two more buttons, after the save
