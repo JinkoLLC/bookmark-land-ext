@@ -120,6 +120,7 @@ describe("the result screen's decisions", () => {
     expect(importSample(all, sent, 8)).toEqual([sent[1], sent[3], sent[4]]);
     expect(importSample({ ...all, imported: 1, restored: 0 }, sent, 8)).toHaveLength(1);
     for (const result of [partial, here, nothing]) expect(importSample(result, sent, 8)).toEqual([]);
+    expect(importSample({ ...all, imported: 1, restored: 0, duplicates: 1 }, sent, 8)).toEqual([]);
   });
 
   it("blames the plan's limit only when the library has reached it", () => {
