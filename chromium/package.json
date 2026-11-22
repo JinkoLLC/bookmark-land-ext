@@ -17,15 +17,15 @@
     "postinstall": "wxt prepare"
   },
   "dependencies": {
-    "@clerk/chrome-extension": "3.1.108",
+    "@clerk/chrome-extension": "3.1.110",
     "@tiptap/extension-link": "3.34.0",
     "@tiptap/extension-placeholder": "3.34.0",
     "@tiptap/extension-task-item": "3.34.0",
     "@tiptap/extension-task-list": "3.34.0",
     "@tiptap/react": "3.34.0",
     "@tiptap/starter-kit": "3.34.0",
-    "convex": "1.50.0",
-    "lucide-react": "1.73.0",
+    "convex": "1.51.0",
+    "lucide-react": "1.75.0",
     "react": "19.3.1",
     "react-dom": "19.3.1"
   },
@@ -43,7 +43,7 @@
     "jszip": "3.10.2",
     "tailwindcss": "4.3.5",
     "typescript": "6.0.3",
-    "vitest": "5.1.0",
+    "vitest": "5.1.1",
     "wxt": "0.21.5"
   },
   "overrides": {
